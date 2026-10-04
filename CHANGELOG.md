@@ -1,3 +1,9 @@
+## 1.0.1275+319
+
+- Remake the Windows installer's sidebar graph with an antialiased curved green line, soft gradient fill, and rounded charcoal surface using the app's theme colors.
+- Regenerate the bundled sidebar artwork while retaining the surrounding logo and text.
+- Bump synchronized release metadata to `1.0.1275+319`.
+
 ## Android Gradle download CI maintenance (1.0.1274+318)
 
 - Start the generated Gradle wrapper before dependency checks and compilation, retrying temporary download/startup failures up to four attempts with bounded timeouts and backoff.
