@@ -21516,7 +21516,8 @@ class SettingsScreen extends StatelessWidget {
             ],
             const SectionHeader('App'),
             SettingsTile(icon: Icons.privacy_tip_rounded, title: 'Privacy & data', subtitle: state.privacyTelemetryEnabled ? 'Telemetry enabled • policy and data controls' : 'Telemetry off • policy and data controls', color: '#B4A5FF', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyAndDataScreen()))),
-            SettingsTile(icon: Icons.system_update_alt_rounded, title: 'Updates', subtitle: state.updateStatusMessage, color: kSleekAccentHex, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdatesScreen()))),
+            if (!kIsGooglePlayBuild)
+              SettingsTile(icon: Icons.system_update_alt_rounded, title: 'Updates', subtitle: state.updateStatusMessage, color: kSleekAccentHex, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdatesScreen()))),
             SettingsTile(icon: Icons.tune_rounded, title: 'Advanced settings', subtitle: 'Defaults, account order, and data health', color: '#9AD0F5', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdvancedSettingsScreen()))),
             SettingsTile(icon: Icons.info_rounded, title: 'About app', subtitle: 'Version, credits, licenses, and links', color: '#86E3CE', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()))),
           ],

@@ -1,3 +1,9 @@
+## 1.0.1276+320
+
+- Hide the Updates entry in Settings for Google Play builds, using the existing build-distribution flag.
+- Retain the Updates entry for direct Android and desktop builds.
+- Bump synchronized release metadata to `1.0.1276+320`.
+
 ## 1.0.1275+319
 
 - Remake the Windows installer's sidebar graph with an antialiased curved green line, soft gradient fill, and rounded charcoal surface using the app's theme colors.
