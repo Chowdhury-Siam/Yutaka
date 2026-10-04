@@ -1,0 +1,77 @@
+{
+  "tag_name": "v1.0.1276",
+  "draft": false,
+  "prerelease": false,
+  "assets": [
+    {
+      "name": "yutaka-update.json",
+      "size": 4275,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/yutaka-update.json"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-arm32.apk",
+      "size": 34416741,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-arm32.apk"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-arm64.apk",
+      "size": 36188443,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-arm64.apk"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-linux-arm64-Setup.run",
+      "size": 26994174,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-linux-arm64-Setup.run"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-linux-arm64.AppImage",
+      "size": 26814984,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-linux-arm64.AppImage"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-linux-arm64.tar.gz",
+      "size": 13378800,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-linux-arm64.tar.gz"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-linux-x64-Setup.run",
+      "size": 29052403,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-linux-x64-Setup.run"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-linux-x64.AppImage",
+      "size": 28871160,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-linux-x64.AppImage"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-linux-x64.tar.gz",
+      "size": 13822284,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-linux-x64.tar.gz"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-macos-universal.dmg",
+      "size": 29094501,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-macos-universal.dmg"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-macos-universal.zip",
+      "size": 28876085,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-macos-universal.zip"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-play.aab",
+      "size": 80667891,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-play.aab"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-Setup.exe",
+      "size": 16361059,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-Setup.exe"
+    },
+    {
+      "name": "Yutaka-v1.0.1276-universal.apk",
+      "size": 58925368,
+      "browser_download_url": "https://github.com/Chowdhury-Siam/Yutaka/releases/download/v1.0.1276/Yutaka-v1.0.1276-universal.apk"
+    }
+  ]
+}
