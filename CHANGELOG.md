@@ -1,3 +1,12 @@
+## 1.0.1277+321
+
+- Replace macOS DMG publishing with a universal PKG containing the custom Yutaka Setup app, retaining the portable application ZIP.
+- Use macOS Installer only to prepare the setup launcher; open the themed custom installer as the signed-in user for folder selection, installation, progress, retry and Launch Yutaka.
+- Prefer PKG in the in-app updater, include PKG in update cleanup, and retain fallback for older DMG/ZIP releases.
+- Add optional Developer ID Installer certificate configuration and sign/notarize/staple the final PKG separately from the app and custom setup.
+- Verify the setup extracted from the actual PKG, test packaging and safe user-session handoff, and remove obsolete DMG layout tooling/artwork.
+- Bump synchronized release metadata to `1.0.1277+321`.
+
 ## 1.0.1276+320
 
 - Hide the Updates entry in Settings for Google Play builds, using the existing build-distribution flag.

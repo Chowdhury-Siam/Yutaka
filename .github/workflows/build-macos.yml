@@ -89,7 +89,7 @@ jobs:
 
   build-macos:
     needs: prepare-worker-bundle
-    name: Build macOS universal DMG and app archive
+    name: Build macOS universal PKG and app archive
     if: github.repository == 'Chowdhury-Siam/Yutaka'
     # Apple Silicon is substantially faster for Flutter/Xcode release compilation than
     # the legacy Intel image. Flutter release builds remain universal when the ARM64-only
@@ -333,7 +333,7 @@ jobs:
           APP_PATH="$YUTAKA_MACOS_APP"
 
           if [ -z "${MACOS_CERTIFICATE_BASE64:-}" ]; then
-            echo "::warning::MACOS_CERTIFICATE_BASE64 is not configured. The DMG will be distributed without Developer ID notarization."
+            echo "::warning::MACOS_CERTIFICATE_BASE64 is not configured. The app/setup will be distributed without Developer ID notarization."
             echo "MACOS_SIGNING_ENABLED=false" >> "$GITHUB_ENV"
             exit 0
           fi
@@ -409,7 +409,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s tools/installers/tests -p 'test_macos_installer.py' -v
+          python3 -m unittest discover -s tools/installers/tests -p 'test_macos*.py' -v
           codesign --verify --deep --strict "$YUTAKA_MACOS_APP"
           SETUP_APP="$RUNNER_TEMP/Yutaka Setup.app"
           python3 tools/installers/macos/build.py \
@@ -435,45 +435,89 @@ jobs:
           fi
           echo "YUTAKA_MACOS_SETUP=$SETUP_APP" >> "$GITHUB_ENV"
 
-      - name: Set up pinned DMG layout tool
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m venv "$RUNNER_TEMP/yutaka-dmgbuild"
-          "$RUNNER_TEMP/yutaka-dmgbuild/bin/python" -m pip install --disable-pip-version-check dmgbuild==1.6.7
-
-      - name: Package macOS universal DMG and ZIP
+      - name: Prepare optional Developer ID Installer signing
         shell: bash
         env:
-          YUTAKA_INSTALLER_ASSETS: ${{ github.workspace }}/tools/installers/assets
+          MACOS_INSTALLER_CERTIFICATE_BASE64: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_BASE64 }}
+          MACOS_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_PASSWORD }}
+          MACOS_INSTALLER_SIGNING_IDENTITY: ${{ secrets.MACOS_INSTALLER_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${MACOS_INSTALLER_CERTIFICATE_BASE64:-}" ]; then
+            if [ -z "${MACOS_INSTALLER_CERTIFICATE_PASSWORD:-}" ]; then
+              echo "::error::MACOS_INSTALLER_CERTIFICATE_PASSWORD is required for the Installer certificate."
+              exit 1
+            fi
+            CERT_PATH="$RUNNER_TEMP/yutaka-installer-id.p12"
+            KEYCHAIN_PATH="$RUNNER_TEMP/yutaka-pkg-signing.keychain-db"
+            KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+            export CERT_PATH
+            python3 - <<'PY_INSTALLER_CERT'
+          import base64
+          import os
+          from pathlib import Path
+          Path(os.environ['CERT_PATH']).write_bytes(base64.b64decode(os.environ['MACOS_INSTALLER_CERTIFICATE_BASE64'].strip(), validate=True))
+          PY_INSTALLER_CERT
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$MACOS_INSTALLER_CERTIFICATE_PASSWORD" \
+              -T /usr/bin/productbuild -T /usr/bin/productsign -T /usr/bin/security
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+            security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          fi
+          IDENTITY="${MACOS_INSTALLER_SIGNING_IDENTITY:-}"
+          if [ -z "$IDENTITY" ]; then
+            IDENTITY="$(security find-identity -v | sed -n 's/.*"\(Developer ID Installer:[^"]*\)".*/\1/p' | head -n 1)"
+          fi
+          if [ -n "${MACOS_INSTALLER_CERTIFICATE_BASE64:-}" ] && [ -z "$IDENTITY" ]; then
+            echo "::error::No Developer ID Installer identity was found in the imported certificate."
+            exit 1
+          fi
+          echo "MACOS_PKG_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Package macOS universal PKG and ZIP
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          DMG="artifacts/Yutaka-v${YUTAKA_APP_VERSION_NAME}-macos-universal.dmg"
+          PKG="artifacts/Yutaka-v${YUTAKA_APP_VERSION_NAME}-macos-universal.pkg"
           ZIP="artifacts/Yutaka-v${YUTAKA_APP_VERSION_NAME}-macos-universal.zip"
-
-          # Write Finder layout directly, without opening Finder or AppleScript.
-          # Keep fast compression and independent DMG/ZIP packaging concurrent.
+          if [ -z "${MACOS_PKG_SIGNING_IDENTITY:-}" ]; then
+            echo "::warning::No Developer ID Installer certificate configured; the PKG will be unsigned."
+          fi
+          # PKG and portable ZIP creation remain independent and concurrent.
           (
-            "$RUNNER_TEMP/yutaka-dmgbuild/bin/dmgbuild" \
-              -s tools/installers/macos/settings.py "Yutaka" "$DMG"
+            python3 tools/installers/macos/package.py --setup "$YUTAKA_MACOS_SETUP" \
+              --version "$YUTAKA_APP_VERSION_NAME" --output "$PKG" --sign "${MACOS_PKG_SIGNING_IDENTITY:-}"
           ) &
-          dmg_pid=$!
+          pkg_pid=$!
           (
             ditto -c -k --sequesterRsrc --keepParent "$YUTAKA_MACOS_APP" "$ZIP"
           ) &
           zip_pid=$!
 
-          wait "$dmg_pid"
+          wait "$pkg_pid"
           wait "$zip_pid"
-          CHECK_MOUNT="$RUNNER_TEMP/yutaka-dmg-check"
-          mkdir -p "$CHECK_MOUNT"
-          hdiutil attach -readonly -nobrowse -mountpoint "$CHECK_MOUNT" "$DMG"
-          trap 'hdiutil detach "$CHECK_MOUNT" >/dev/null 2>&1 || true' EXIT
-          codesign --verify --deep --strict "$CHECK_MOUNT/Yutaka Setup.app"
-          "$CHECK_MOUNT/Yutaka Setup.app/Contents/MacOS/YutakaSetup" --check-ui
-          hdiutil detach "$CHECK_MOUNT"
-          trap - EXIT
+          CHECK_PACKAGE="$RUNNER_TEMP/yutaka-pkg-check"
+          pkgutil --expand-full "$PKG" "$CHECK_PACKAGE"
+          PACKAGED_SETUP="$CHECK_PACKAGE/YutakaSetup.pkg/Payload/Applications/Yutaka Setup.app"
+          codesign --verify --deep --strict "$PACKAGED_SETUP"
+          "$PACKAGED_SETUP/Contents/MacOS/YutakaSetup" --check-ui
+          if [ -n "${MACOS_PKG_SIGNING_IDENTITY:-}" ]; then
+            pkgutil --check-signature "$PKG"
+            if [ "${MACOS_NOTARIZED:-false}" = true ]; then
+              xcrun notarytool submit "$PKG" \
+                --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" --wait
+              xcrun stapler staple "$PKG"
+              xcrun stapler validate "$PKG"
+            fi
+          fi
           ls -lh artifacts
 
       - name: Upload macOS release artifacts
@@ -481,7 +525,7 @@ jobs:
         with:
           name: yutaka-macos-universal
           path: |
-            artifacts/Yutaka-v*-macos-universal.dmg
+            artifacts/Yutaka-v*-macos-universal.pkg
             artifacts/Yutaka-v*-macos-universal.zip
           if-no-files-found: error
           compression-level: 0

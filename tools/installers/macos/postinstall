@@ -1,0 +1,14 @@
+#!/bin/bash
+# The PKG prepares setup; the existing custom UI owns the actual app install.
+set -euo pipefail
+if [ "${3:-/}" != / ]; then exit 0; fi
+SETUP="/Applications/Yutaka Setup.app"
+/usr/bin/codesign --verify --deep --strict "$SETUP"
+CONSOLE_USER="$(/usr/bin/stat -f '%Su' /dev/console)"
+case "$CONSOLE_USER" in ''|root|loginwindow|_mbsetupuser) exit 0;; esac
+CONSOLE_UID="$(/usr/bin/id -u "$CONSOLE_USER")"
+# Never run the UI/backend as root or block package completion on the GUI.
+if ! /bin/launchctl asuser "$CONSOLE_UID" /usr/bin/sudo -H -u "$CONSOLE_USER" /usr/bin/open "$SETUP"; then
+  echo "Open Yutaka Setup from Applications to finish installing Yutaka."
+fi
+exit 0

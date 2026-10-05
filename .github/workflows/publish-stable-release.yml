@@ -228,7 +228,7 @@ jobs:
           content_types = {
               ".apk": "application/vnd.android.package-archive",
               ".exe": "application/vnd.microsoft.portable-executable",
-              ".dmg": "application/x-apple-diskimage",
+              ".pkg": "application/vnd.apple.installer+xml",
               ".appimage": "application/octet-stream",
               ".gz": "application/gzip",
               ".zip": "application/zip",

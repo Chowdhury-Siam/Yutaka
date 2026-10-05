@@ -389,7 +389,7 @@ class ReleaseAssetMatcher {
   static ReleaseAsset? preferredMacOsInstaller(GithubRelease release) {
     final candidates = release.assets.where((asset) {
       final name = asset.name.toLowerCase();
-      return name.contains('macos') && (name.endsWith('.dmg') || name.endsWith('.zip'));
+      return name.contains('macos') && (name.endsWith('.pkg') || name.endsWith('.dmg') || name.endsWith('.zip'));
     }).toList();
     if (candidates.isEmpty) return null;
     candidates.sort((a, b) => _macOsInstallerRank(a.name).compareTo(_macOsInstallerRank(b.name)));
@@ -465,8 +465,10 @@ class ReleaseAssetMatcher {
   static int _macOsInstallerRank(String name) {
     final lower = name.toLowerCase();
     var score = 0;
-    if (lower.endsWith('.dmg')) {
+    if (lower.endsWith('.pkg')) {
       score += 0;
+    } else if (lower.endsWith('.dmg')) {
+      score += 4;
     } else if (lower.endsWith('.zip')) {
       score += 8;
     } else {
@@ -666,7 +668,7 @@ class UpdateDownloadStore {
   }) => desktopReleaseAssetFile(
     release: release,
     asset: asset,
-    fallbackName: 'Yutaka.dmg',
+    fallbackName: 'Yutaka.pkg',
   );
 
   static Future<void> cleanupPartialFiles({Directory? directory}) async {
@@ -734,7 +736,7 @@ class UpdateDownloadStore {
     await _cleanupStaleReleaseAssets(
       keepVersion: keepVersion,
       directory: directory,
-      extensions: const ['.dmg', '.zip', '.part'],
+      extensions: const ['.pkg', '.dmg', '.zip', '.part'],
     );
   }
 
@@ -845,6 +847,14 @@ class MacOsUpdateInstaller {
     if (!Platform.isMacOS) return false;
     final file = File(path);
     if (!await file.exists()) return false;
+    if (file.path.toLowerCase().endsWith('.pkg')) {
+      try {
+        final opened = await Process.run('/usr/bin/open', [file.path]);
+        return opened.exitCode == 0;
+      } catch (_) {
+        return false;
+      }
+    }
     if (file.path.toLowerCase().endsWith('.dmg')) {
       Directory? mount;
       var attached = false;

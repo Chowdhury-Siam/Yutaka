@@ -123,6 +123,15 @@ void main() {
       expect(ReleaseAssetMatcher.preferredLinuxInstaller(legacy)!.name, endsWith('.AppImage'));
     });
 
+    test('macOS prefers PKG and retains legacy DMG and ZIP fallback', () {
+      for (final formats in [<String>['zip', 'dmg', 'pkg'], <String>['zip', 'dmg'], <String>['zip']]) {
+        final packages = GithubRelease.fromJson(_release('v1.5.0', assets: [
+          for (final format in formats) _asset('Yutaka-v1.5.0-macos-universal.$format', 1000),
+        ]));
+        expect(ReleaseAssetMatcher.preferredMacOsInstaller(packages)!.name, endsWith('.${formats.last}'));
+      }
+    });
+
     test('Linux does not select a setup for a different known architecture', () {
       final current = Platform.version.toLowerCase();
       final String other;

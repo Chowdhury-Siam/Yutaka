@@ -129,7 +129,7 @@ Desktop downloads use Yutaka's app icon, charcoal surfaces and green accent:
 | --- | --- |
 | Windows | Run `Yutaka-v<version>-Setup.exe`; choose a folder and optional desktop shortcut, then launch Yutaka. |
 | Linux | Download the matching x64/ARM64 `Yutaka-v<version>-linux-<arch>-Setup.run`. Run `bash <downloaded-file>.run` to open the graphical installer; choose a folder and install. |
-| macOS | Open the universal `.dmg`, drag **Yutaka** onto **Applications**, then open Yutaka from Applications. |
+| macOS | Open the universal `.pkg`, complete the macOS package prompt, then choose your folder and install in **Yutaka Setup**. |
 
 Linux setup requires GTK 3 for its graphical interface and installs for the current user without administrator access. The default app folder is `~/.local/opt/yutaka`; a menu entry and `~/.local/bin/yutaka` launcher are created. For terminal installation use `bash <downloaded-file>.run --install`, optionally with `--prefix /absolute/app/folder` and `--desktop-shortcut`. The launcher runs the AppImage without requiring FUSE. Installer upgrades replace app files and preserve your existing Yutaka data.
 
@@ -713,7 +713,7 @@ Yutaka has separate Android distribution flavors so Play Store installs never us
 flutter build appbundle --release --flavor play \
   --no-tree-shake-icons \
   --dart-define=YUTAKA_ANDROID_DISTRIBUTION=play \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1276
+  --dart-define=YUTAKA_APP_VERSION=1.0.1277
 ```
 
 **Direct/GitHub APK** — keeps the GitHub APK updater for users who install outside Google Play:
@@ -722,7 +722,7 @@ flutter build appbundle --release --flavor play \
 flutter build apk --release --flavor direct \
   --no-tree-shake-icons \
   --dart-define=YUTAKA_ANDROID_DISTRIBUTION=direct \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1276
+  --dart-define=YUTAKA_APP_VERSION=1.0.1277
 ```
 
 After a successful direct Android update, Yutaka requests reopening and shows its update-success popup on launch. Android may block an app from opening itself from the background; when notifications are allowed, a quiet **Open Yutaka** completion notification provides a tap-to-open fallback. Cancelled or failed updates do not reopen the app, and Google Play builds continue using Play’s update flow.
@@ -736,7 +736,7 @@ flutter config --enable-windows-desktop
 flutter create --platforms=windows --project-name yutaka --no-pub .
 flutter pub get
 flutter build windows --release \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1276
+  --dart-define=YUTAKA_APP_VERSION=1.0.1277
 ```
 
 ## 10.5 Linux build
@@ -753,7 +753,7 @@ flutter config --enable-linux-desktop
 flutter create --platforms=linux --project-name yutaka --no-pub .
 flutter pub get
 flutter build linux --release \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1276
+  --dart-define=YUTAKA_APP_VERSION=1.0.1277
 ```
 
 The release workflow builds both **x64** and **ARM64** Linux packages on Ubuntu 22.04. The x64 runner uses the pinned Flutter SDK release directly; the ARM64 runner bootstraps the same pinned Flutter tag from source so it does not depend on missing prebuilt ARM64 SDK archive entries. Each architecture gets:
@@ -775,12 +775,12 @@ flutter config --enable-macos-desktop
 flutter create --platforms=macos --project-name yutaka --org com.yutaka --no-pub .
 flutter pub get
 flutter build macos --release \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1276
+  --dart-define=YUTAKA_APP_VERSION=1.0.1277
 ```
 
-The release workflow builds one **universal macOS package** containing both **Apple Silicon (ARM64)** and **Intel (x64)** slices. GitHub Releases publish `Yutaka-v<version>-macos-universal.dmg` and a matching `.zip` containing `Yutaka.app`. CI runs on GitHub's Apple Silicon `macos-15` runner for faster Xcode/Flutter compilation, bootstraps the pinned Flutter `3.47.4` source tag into a reusable SDK cache, keeps Flutter's universal macOS mode enabled, verifies both architecture slices with `lipo`, and reuses CocoaPods plus incremental macOS build caches between releases. It also applies Yutaka's icon and `com.yutaka.siam` bundle identifier and enables network access plus user-selected file read/write access for sync, import, and backup workflows.
+The release workflow builds one **universal macOS package** containing both **Apple Silicon (ARM64)** and **Intel (x64)** slices. GitHub Releases publish `Yutaka-v<version>-macos-universal.pkg` and a matching `.zip` containing `Yutaka.app`. CI runs on GitHub's Apple Silicon `macos-15` runner for faster Xcode/Flutter compilation, bootstraps the pinned Flutter `3.47.4` source tag into a reusable SDK cache, keeps Flutter's universal macOS mode enabled, verifies both architecture slices with `lipo`, and reuses CocoaPods plus incremental macOS build caches between releases. It also applies Yutaka's icon and `com.yutaka.siam` bundle identifier and enables network access plus user-selected file read/write access for sync, import, and backup workflows.
 
-The DMG contains **Yutaka Setup.app**, a small universal AppKit installer with the matching dark header, branded sidebar, folder selection, real installation progress, failure/retry and Launch Yutaka screen. In-app updates mount the DMG and open setup directly. Setup verifies the embedded app checksum and code signature before replacing only `Yutaka.app`; upgrades stage the bundle and restore the previous app if the final move fails. Existing financial data stays in place. CI runs native backend tests and checks setup from the mounted DMG. `dmgbuild==1.6.7` creates the branded Finder launch window; the portable ZIP still contains the signed/stapled main app, and DMG/ZIP packaging stays concurrent.
+The PKG prepares **Yutaka Setup.app** in `/Applications` and opens it as the signed-in user after macOS Installer completes its package step. The custom AppKit window retains the matching dark header, branded sidebar, folder selection, real installation progress, failure/retry and Launch Yutaka screen. The package step prepares the launcher; installation of Yutaka itself finishes in the custom window. If no user session is available or the launch fails, open **Yutaka Setup** from Applications manually. Setup verifies the embedded app checksum and code signature before replacing only `Yutaka.app`; upgrades stage the bundle and restore the previous app if the final move fails. Existing financial data stays in place. In-app updates prefer PKG and retain older DMG/ZIP fallback. CI builds PKG with Apple's built-in `pkgbuild`/`productbuild`, expands the actual package to verify setup and its UI, and runs packaging and backend tests. PKG and portable ZIP creation remain concurrent.
 
 The GitHub release workflow reads the official version/build number from `pubspec.yaml`.
 
@@ -795,7 +795,7 @@ When a signed-in user chooses a profile photo, animated GIF, or profile video, Y
 | `build-android-apks.yml` | Builds direct Android APKs plus the Google Play AAB and runs the Android quality, Worker-integrity, and 16 KB page-size gates |
 | `build-windows.yml` | Builds the Windows x64 app and installer EXE independently from the other platforms |
 | `build-linux.yml` | Builds Linux x64/ARM64 graphical installers, AppImages and portable archives independently from the other platforms |
-| `build-macos.yml` | Builds the universal macOS DMG and app ZIP independently from the other platforms |
+| `build-macos.yml` | Builds the universal macOS PKG and app ZIP independently from the other platforms |
 | `publish-stable-release.yml` | Waits for successful Android, Windows, Linux, and macOS runs for the same commit, publishes their artifacts together as the stable GitHub Release, then deletes those successful platform runs and older successful publisher runs; failed/cancelled runs and the newest successful publisher run are kept |
 | `deploy-sync-worker.yml` | Deploys a fork owner's self-hosted Cloudflare Worker |
 
@@ -824,11 +824,14 @@ For public distribution outside the Mac App Store, configure these optional GitH
 - `MACOS_CERTIFICATE_BASE64` — Base64-encoded Developer ID Application `.p12`.
 - `MACOS_CERTIFICATE_PASSWORD` — password for the `.p12`.
 - `MACOS_SIGNING_IDENTITY` — optional exact Developer ID Application identity; CI auto-detects it when omitted.
+- `MACOS_INSTALLER_CERTIFICATE_BASE64` — Base64-encoded Developer ID Installer `.p12` for signing the PKG.
+- `MACOS_INSTALLER_CERTIFICATE_PASSWORD` — password for the Installer `.p12`.
+- `MACOS_INSTALLER_SIGNING_IDENTITY` — optional exact Developer ID Installer identity; CI auto-detects it when omitted.
 - `APPLE_ID` — Apple ID used for notarization.
 - `APPLE_APP_SPECIFIC_PASSWORD` — app-specific password for the Apple ID.
 - `APPLE_TEAM_ID` — Apple Developer Team ID.
 
-When these are present, CI signs and notarizes the main app with hardened runtime, staples its ticket to `Yutaka.app`, then independently signs, notarizes and staples the custom setup app. The DMG contains setup with the verified main app embedded; the portable ZIP contains the main app directly. If they are omitted, CI still produces DMG/ZIP artifacts, but macOS can show normal Gatekeeper warnings for an unnotarized application.
+CI uses Developer ID Application for the main app and custom setup, and Developer ID Installer for the PKG. When both certificates and the Apple credentials are configured, it signs, notarizes and staples the app, setup and final PKG separately. An Application certificate alone cannot sign the PKG. The portable ZIP contains the main app directly. With signing secrets omitted, CI still produces PKG/ZIP artifacts, but the package is unsigned and macOS can show Gatekeeper warnings.
 
 ---
 

@@ -74,7 +74,7 @@ void main() {
     expect(macos, contains('FLUTTER_MACOS_ARM64_ONLY: "false"'));
     expect(macos, contains('flutter build macos --release'));
     expect(macos, contains('lipo -archs'));
-    expect(macos, contains('macos-universal.dmg'));
+    expect(macos, contains('macos-universal.pkg'));
     expect(macos, contains('macos-universal.zip'));
     expect(macos, contains('xcrun notarytool submit'));
 
@@ -162,10 +162,10 @@ void main() {
     final androidGradle = File('android/app/build.gradle').readAsStringSync();
     final readme = File('README.md').readAsStringSync();
 
-    expect(pubspec, contains('version: 1.0.1276+320'));
-    expect(config, contains("defaultValue: '1.0.1276'"));
-    expect(androidGradle, contains('versionCode = 320'));
-    expect(androidGradle, contains('versionName = "1.0.1276"'));
+    expect(pubspec, contains('version: 1.0.1277+321'));
+    expect(config, contains("defaultValue: '1.0.1277'"));
+    expect(androidGradle, contains('versionCode = 321'));
+    expect(androidGradle, contains('versionName = "1.0.1277"'));
     expect(readme, contains('Android, Windows, Linux, and macOS'));
     expect(readme, contains('universal macOS package'));
     expect(File('tools/linux/yutaka.desktop').existsSync(), isTrue);
@@ -188,7 +188,9 @@ void main() {
     expect(linux, contains('tools/installers/linux/build.py'));
     expect(linux, contains('xvfb-run -a'));
     expect(linux, contains('artifacts/Yutaka-v*-linux-\${{ matrix.arch }}-Setup.run'));
-    expect(macos, contains('dmgbuild==1.6.7'));
-    expect(macos, contains('tools/installers/macos/settings.py'));
+    expect(macos, contains('tools/installers/macos/package.py'));
+    expect(macos, contains('pkgutil --expand-full'));
+    expect(macos, contains('MACOS_INSTALLER_CERTIFICATE_BASE64'));
+    expect(macos, isNot(contains('dmgbuild')));
   });
 }

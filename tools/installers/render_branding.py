@@ -6,7 +6,6 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(__file__).with_name("assets")
-BACKGROUND = "#0F1216"
 SURFACE = "#13181D"
 OUTLINE = "#272F35"
 ACCENT = "#00BD91"
@@ -23,12 +22,6 @@ def font(size, bold=False):
         except OSError:
             pass
     raise RuntimeError("Install Inter or DejaVu Sans to regenerate installer artwork.")
-
-
-def centered(draw, text, y, width, size, color=TEXT, bold=False):
-    face = font(size, bold)
-    x = (width - draw.textlength(text, font=face)) / 2
-    draw.text((x, y), text, font=face, fill=color)
 
 
 def paste_icon(image, box):
@@ -95,18 +88,6 @@ def main():
     paste_icon(small, (0, 0, 110, 110))
     small.save(OUT / "windows-icon.bmp")
 
-    # Finder launches the native setup. All install controls live in that app.
-    mac = Image.new("RGB", (720, 440), BACKGROUND)
-    draw = ImageDraw.Draw(mac)
-    paste_icon(mac, (34, 26, 66, 66))
-    draw.text((114, 29), "Yutaka", font=font(30, True), fill=TEXT)
-    draw.text((115, 70), "Your finances, in your control.", font=font(15), fill=MUTED)
-    draw.line((34, 112, 686, 112), fill=OUTLINE, width=1)
-    centered(draw, "Open Yutaka Setup to install", 138, 720, 24, bold=True)
-    draw.rounded_rectangle((254, 190, 466, 344), radius=26, fill=SURFACE, outline=OUTLINE)
-    draw.rounded_rectangle((270, 311, 450, 340), radius=10, fill="#747474")
-    centered(draw, "Choose a folder. Install. Make yourself at home.", 382, 720, 16, MUTED)
-    mac.save(OUT / "macos-background.png", optimize=True)
     print(f"Rendered installer artwork in {OUT}")
 
 

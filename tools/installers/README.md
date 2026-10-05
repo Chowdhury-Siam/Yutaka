@@ -24,16 +24,21 @@ Actual Linux installer preview:
   Bash, tar and sha256sum are required for terminal setup. The normal AppImage and
   portable archive remain available. In-app updates prefer the custom setup for
   the current architecture and retain AppImage/archive fallback for older releases.
-- **macOS:** `macos/main.swift` provides a matching small native AppKit setup app,
-  compiled for both Apple Silicon and Intel by `macos/build.py`. The DMG opens
-  `Yutaka Setup.app`; the app update flow mounts it and opens setup directly.
+- **macOS:** `macos/main.swift` provides the matching native AppKit setup,
+  compiled for Apple Silicon and Intel by `macos/build.py`. `macos/package.py`
+  packages the signed setup with Apple's built-in `pkgbuild`/`productbuild`.
+  macOS Installer prepares `/Applications/Yutaka Setup.app`; the postinstall
+  script opens it as the console user, and the custom UI handles folder choice,
+  installation, progress, retry and Launch Yutaka. With no active session, the
+  launcher remains available in Applications. The GUI never runs as root.
   `macos/install.sh` verifies the embedded ZIP checksum and app code signature,
   stages the entire bundle and restores the prior app if the final move fails.
   It changes only `Yutaka.app`, preserves user data, and uses a folder lock to
   prevent concurrent installs. Setup asks a running Yutaka to quit normally.
-  CI separately signs/notarizes setup when credentials are available, tests the
-  backend on macOS and launches the UI check from the mounted DMG. The portable
-  ZIP still contains the main app directly.
+  CI verifies the setup extracted from the PKG and signs/notarizes the app,
+  setup and PKG when their respective Developer ID certificates are configured.
+  In-app updates prefer PKG with legacy DMG/ZIP fallback. The portable ZIP still
+  contains the main app directly.
 
 Generated artwork is checked in, so release runners need no image-rendering
 dependencies. To regenerate it, install Pillow and Inter or DejaVu Sans, then run:

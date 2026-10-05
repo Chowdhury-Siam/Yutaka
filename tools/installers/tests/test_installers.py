@@ -2,12 +2,10 @@
 import importlib.util
 import os
 import platform
-import plistlib
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 INSTALLERS = ROOT / "tools/installers"
@@ -127,29 +125,6 @@ class InstallerTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("corrupted", result.stderr)
         self.assertFalse(self.install.exists())
-
-    def test_macos_layout_uses_built_app_icon_and_signed_bundle(self):
-        app = self.root / "Generated.app"
-        resources = app / "Contents/Resources"
-        resources.mkdir(parents=True)
-        with (app / "Contents/Info.plist").open("wb") as stream:
-            plistlib.dump({"CFBundleIconFile": "RealAppIcon"}, stream)
-        (resources / "RealAppIcon.icns").write_bytes(b"icon")
-        setup = self.root / "Yutaka Setup.app"
-        (setup / "Contents/MacOS").mkdir(parents=True)
-        (setup / "Contents/MacOS/YutakaSetup").write_bytes(b"universal-setup")
-        with patch.dict(os.environ, {"YUTAKA_MACOS_APP": str(app), "YUTAKA_MACOS_SETUP": str(setup), "YUTAKA_INSTALLER_ASSETS": str(INSTALLERS / "assets")}):
-            # dmgbuild executes settings as Python source; it need not set __file__.
-            settings = {}
-            exec(compile((INSTALLERS / "macos/settings.py").read_text(), "settings.py", "exec"), settings)
-        self.assertEqual(settings["files"], [(str(setup.resolve()), "Yutaka Setup.app")])
-        self.assertEqual(settings["icon"], str(resources / "RealAppIcon.icns"))
-        self.assertEqual(settings["symlinks"], {})
-        self.assertTrue(Path(settings["background"]).is_file())
-        width, height = settings["window_rect"][1]
-        for x, y in settings["icon_locations"].values():
-            self.assertTrue(0 < x < width and 0 < y < height)
-
 
 if __name__ == "__main__":
     unittest.main()
