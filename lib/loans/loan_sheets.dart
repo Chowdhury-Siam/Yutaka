@@ -494,8 +494,8 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
           const SizedBox(height: 10),
           SleekPillSelector<LoanDirection>(
             options: const [
-              SleekPillOption(value: LoanDirection.lent, label: 'I gave', icon: Icons.south_west_rounded),
-              SleekPillOption(value: LoanDirection.borrowed, label: 'I took', icon: Icons.north_east_rounded),
+              SleekPillOption(value: LoanDirection.lent, label: 'I gave', icon: Icons.north_east_rounded),
+              SleekPillOption(value: LoanDirection.borrowed, label: 'I took', icon: Icons.south_west_rounded),
             ],
             selected: direction,
             onChanged: (value) => setState(() => direction = value),

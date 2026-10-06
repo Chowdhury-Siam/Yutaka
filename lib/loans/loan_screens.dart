@@ -437,7 +437,7 @@ class LoanDetailScreen extends StatelessWidget {
               body: payments.isEmpty
                   ? '${state.format(loan.principal)} · No repayments recorded yet'
                   : '${state.format(loan.principal)} principal',
-              icon: loan.isLent ? Icons.south_west_rounded : Icons.north_east_rounded,
+              icon: loan.isLent ? Icons.north_east_rounded : Icons.south_west_rounded,
               color: loan.isLent ? kSleekIncome : kSleekExpense,
               isFirst: true,
               isLast: payments.isEmpty,

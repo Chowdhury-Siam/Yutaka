@@ -1,3 +1,8 @@
+## 1.0.1278+322
+
+- Correct loan direction arrows: “I gave” / money lent points outward, and “I took” / money borrowed points inward, in the shared loan form and loan timeline.
+- Bump synchronized release metadata to `1.0.1278+322`.
+
 ## 1.0.1277+321
 
 - Replace macOS DMG publishing with a universal PKG containing the custom Yutaka Setup app, retaining the portable application ZIP.
