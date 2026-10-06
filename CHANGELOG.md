@@ -1,5 +1,6 @@
 ## Flatpak storage test maintenance (1.0.1279+323)
 
+- Preserve and restore the nullable SQLite factory so Linux tests do not read the throwing factory getter before FFI initialization.
 - Replace the method-channel-only path mock with a PathProviderPlatform fake, following the plugin testing guidance.
 - Use the in-process SQLite FFI test factory and restore test globals after initialization failures.
 - Declare the already-resolved platform interface as a development dependency and enable expanded Linux test reporting.

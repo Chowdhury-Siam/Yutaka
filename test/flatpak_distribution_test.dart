@@ -31,7 +31,7 @@ void main() {
   test('Flatpak database and backups stay in private persistent storage', () async {
     final directory = await Directory.systemTemp.createTemp('yutaka-flatpak-data-');
     final previousPaths = PathProviderPlatform.instance;
-    final previousFactory = sql.databaseFactory;
+    final previousFactory = sql.databaseFactoryOrNull;
     sql.Database? database;
     try {
       PathProviderPlatform.instance = _TestPaths(directory.path);
@@ -49,7 +49,7 @@ void main() {
       expect(await backups.exists(), isTrue);
     } finally {
       if (database != null && database.isOpen) await database.close();
-      sql.databaseFactory = previousFactory;
+      sql.databaseFactoryOrNull = previousFactory;
       PathProviderPlatform.instance = previousPaths;
       await directory.delete(recursive: true);
     }
