@@ -1,3 +1,11 @@
+## Standalone Flatpak CI packaging (1.0.1279+323)
+
+- Package the existing Linux release bundle as standalone x64 and ARM64 Flatpaks using native GitHub runners and the GNOME runtime.
+- Preserve the complete Flutter bundle and required libjsoncpp library, export the launcher/icon/metadata, and keep host file access restricted to portals.
+- Verify installed runtime dependencies, sandbox startup and private database initialization before uploading; include verified packages in stable release publication.
+- Document GitHub installation/manual updates and distinguish this AI-assisted binary packaging from an independently human-authored Flathub source-build submission.
+- Keep app and Worker versions unchanged for packaging/CI-only changes.
+
 ## Flatpak storage test maintenance (1.0.1279+323)
 
 - Preserve and restore the nullable SQLite factory so Linux tests do not read the throwing factory getter before FFI initialization.

@@ -1,9 +1,45 @@
-# Flatpak preparation
+# Standalone Flatpak and Flathub preparation
 
-This directory contains upstream integration assets, not a Flathub submission.
-There is no Flatpak build manifest or installable Flatpak yet. A human maintainer
-must author the manifest, complete the metadata, test a real sandboxed build,
-and submit it manually.
+The Linux GitHub Actions workflow now packages standalone Flatpaks for x64 and
+ARM64. These packages are for GitHub distribution, not Flathub submission.
+The manifest here was prepared with Codex and packages the already-compiled Linux
+release bundle. It is not eligible for Flathub under its current manifest and
+source-build policies. A human maintainer must independently author the Flathub
+manifest, complete the metadata, test that build, and submit it manually.
+
+## Build and download on GitHub
+
+Commit these changes to `Chowdhury-Siam/Yutaka`, then open **Actions → Build Linux
+Releases → Run workflow**. Pushing the changed files to main/master also triggers
+the workflow. No local Linux computer or additional secrets are needed.
+
+The existing Linux jobs build Flutter and the real embedded Worker bundle.
+They pass a tar archive preserving executable permissions to separate native
+x86_64/aarch64 jobs, which use the GNOME 51 Flatpak build image and the official
+Flatpak builder action. The payload includes libjsoncpp.so.25 required by secure
+storage; other desktop dependencies come from GNOME. CI checks library resolution
+inside the installed runtime, launches the app under Xvfb, and checks that its
+database was initialized in private app storage before uploading the package.
+This smoke check does not replace interactive backup, export and sync testing.
+
+Successful runs provide `yutaka-linux-flatpak-x64` and
+`yutaka-linux-flatpak-arm64` artifacts containing
+`Yutaka-v<version>-linux-<arch>.flatpak`. The existing stable-release publisher
+includes both after all platform workflows succeed for the same source commit.
+Build or verification failures block publication and retain launch failure logs.
+
+On a Linux computer with Flatpak installed, enable the runtime repository and
+install the downloaded file (replace the filename for ARM64 or a later release):
+
+```bash
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user ./Yutaka-v1.0.1279-linux-x64.flatpak
+flatpak run io.github.chowdhury_siam.Yutaka
+```
+
+These standalone files do not provide an automatic update repository. To update,
+download the newer matching-architecture Flatpak and install it over the existing
+one. Keep the same app ID so private finance data remains in the same directory.
 
 ## Authorship and Flathub policy
 
@@ -14,8 +50,8 @@ messages, descriptions, review comments or replies. Other included AI-generated
 material must be disclosed, identifying affected parts and approximate extent;
 reviewers decide whether to accept it.
 
-The Flatpak-specific app changes, tests, desktop file, draft MetaInfo and this
-guide were prepared with Codex. Yutaka also contains earlier Codex-assisted
+The Flatpak-specific app changes, tests, desktop file, draft MetaInfo, standalone
+manifest, packaging workflow and this guide were prepared with Codex. Yutaka also contains earlier Codex-assisted
 changes. The maintainer must review the project history to assess the full extent
 before submission. This is an upstream authorship record, not submission text.
 
@@ -70,8 +106,9 @@ Refer to the [Flatpak documentation](https://docs.flatpak.org/),
 - Support `x86_64` and `aarch64` only after both builds work. Existing AppImage
   builds on both architectures do not prove Flatpak compatibility.
 
-The manifest, dependency manifests and their submission history must be prepared
-by a human in accordance with Flathub's policy. No manifest template is supplied.
+The Flathub manifest, dependency manifests and their submission history must be
+prepared independently by a human in accordance with Flathub's policy. The
+standalone manifest here must not be copied into a Flathub submission.
 
 ## Sandbox checks
 
@@ -108,7 +145,7 @@ The Linux CI runs the distribution tests in direct mode and with the Flatpak
 build define. Those tests cover updater blocking, Settings visibility and private
 database/backup persistence. They are not a Flatpak sandbox or offline-build test.
 
-After a human manifest exists, install Flatpak on a Linux machine and follow the
+For Flathub, after an independently human-authored manifest exists, follow the
 official [build, lint and submission instructions](https://docs.flathub.org/docs/for-app-authors/submission).
 Submit manually against the `new-pr` branch of `flathub/flathub`, then maintain
 the app's Flathub repository after acceptance. The current GitHub release

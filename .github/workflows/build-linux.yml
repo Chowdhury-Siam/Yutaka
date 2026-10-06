@@ -254,6 +254,29 @@ jobs:
           tar -C "$BUNDLE_DIR" -czf "artifacts/Yutaka-v${YUTAKA_APP_VERSION_NAME}-linux-${{ matrix.arch }}.tar.gz" .
           echo "YUTAKA_LINUX_BUNDLE=$BUNDLE_DIR" >> "$GITHUB_ENV"
 
+      - name: Prepare standalone Flatpak payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools/ci -p 'test_flatpak_packaging.py'
+          PAYLOAD="$RUNNER_TEMP/yutaka-flatpak-payload"
+          mkdir -p "$PAYLOAD/lib"
+          cp -a "$YUTAKA_LINUX_BUNDLE"/. "$PAYLOAD/"
+          # Flutter secure storage links to this SONAME; GNOME supplies GTK/libsecret.
+          cp -L "/usr/lib/$(gcc -dumpmachine)/libjsoncpp.so.25" "$PAYLOAD/lib/"
+          mkdir -p "$PAYLOAD/licenses/jsoncpp"
+          cp /usr/share/doc/libjsoncpp25/copyright "$PAYLOAD/licenses/jsoncpp/"
+          convert assets/icons/app_icon.png -resize 512x512! "$PAYLOAD/icon.png"
+          tar -C "$PAYLOAD" -czf artifacts/flatpak-payload.tar.gz .
+
+      - name: Upload standalone Flatpak payload
+        uses: actions/upload-artifact@v5
+        with:
+          name: yutaka-flatpak-input-${{ matrix.arch }}
+          path: artifacts/flatpak-payload.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
       - name: Restore linuxdeploy tool cache
         uses: actions/cache@v4
         with:
@@ -342,5 +365,85 @@ jobs:
             artifacts/Yutaka-v*-linux-${{ matrix.arch }}.AppImage
             artifacts/Yutaka-v*-linux-${{ matrix.arch }}.tar.gz
             artifacts/Yutaka-v*-linux-${{ matrix.arch }}-Setup.run
+          if-no-files-found: error
+          compression-level: 0
+
+  build-flatpak:
+    name: Package and verify standalone Flatpak ${{ matrix.arch }}
+    needs: build-linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x64
+            flatpak_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            flatpak_arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      options: --privileged
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download matching Linux build payload
+        uses: actions/download-artifact@v5
+        with:
+          name: yutaka-flatpak-input-${{ matrix.arch }}
+          path: tools/flatpak
+
+      - name: Prepare Flatpak packaging input
+        id: package
+        shell: bash
+        env:
+          PACKAGE_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p tools/flatpak/payload artifacts
+          tar -xzf tools/flatpak/flatpak-payload.tar.gz -C tools/flatpak/payload
+          test -x tools/flatpak/payload/yutaka
+          python3 - <<'PY'
+          import os, pathlib, re
+          text = pathlib.Path('pubspec.yaml').read_text()
+          version = re.search(r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+', text, re.M).group(1)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'bundle=artifacts/Yutaka-v{version}-linux-{os.environ["PACKAGE_ARCH"]}.flatpak\n')
+          PY
+
+      - name: Build standalone Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: tools/flatpak/io.github.chowdhury_siam.Yutaka.json
+          bundle: ${{ steps.package.outputs.bundle }}
+          arch: ${{ matrix.flatpak_arch }}
+          branch: stable
+          upload-artifact: false
+          verbose: true
+
+      - name: Verify sandbox dependencies and launch
+        shell: bash
+        env:
+          FLATPAK_BUNDLE: ${{ steps.package.outputs.bundle }}
+        run: bash tools/flatpak/verify.sh "$FLATPAK_BUNDLE"
+
+      - name: Upload Flatpak verification logs
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: yutaka-flatpak-${{ matrix.arch }}-failure
+          path: artifacts/build-logs
+          if-no-files-found: ignore
+
+      - name: Upload verified standalone Flatpak
+        uses: actions/upload-artifact@v5
+        with:
+          name: yutaka-linux-flatpak-${{ matrix.arch }}
+          path: ${{ steps.package.outputs.bundle }}
           if-no-files-found: error
           compression-level: 0

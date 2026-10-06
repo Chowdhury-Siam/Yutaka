@@ -761,14 +761,17 @@ The release workflow builds both **x64** and **ARM64** Linux packages on Ubuntu 
 - `Yutaka-v<version>-linux-<arch>.AppImage` — the recommended broad-distro package.
 - `Yutaka-v<version>-linux-<arch>.tar.gz` — the raw Flutter portable bundle.
 - `Yutaka-v<version>-linux-<arch>-Setup.run` — the graphical per-user installer, including the AppImage and a terminal installation option.
+- `Yutaka-v<version>-linux-<arch>.flatpak` — the standalone sandboxed package for GitHub distribution, using the GNOME runtime.
 
 The native GTK installer uses the same custom header, branded sidebar and welcome/progress/completion layout as the other desktop installers. In-app updates prefer the matching architecture’s Setup.run and retain AppImage/archive fallback for older releases. CI compiles the UI with warnings treated as errors and checks installation, busy-close protection, failure/retry and completion under Xvfb, alongside backend upgrade, data-preservation and corruption tests. AppImages are already compressed, so setup packages avoid a second compression pass.
 
 The AppImage is intended for broad compatibility across mainstream **glibc-based** distributions. Distros with materially different userspaces, such as musl-only systems, may need compatibility packages or a source build.
 
-### Flatpak / Flathub preparation
+### Standalone Flatpak / Flathub preparation
 
-Flatpak-specific app behavior, a desktop launcher and draft AppStream metadata are in [`tools/flatpak`](tools/flatpak/README.md). The Flatpak edition uses private persistent storage and lets Flatpak manage app updates. A human-authored manifest, completed screenshots/content rating and a tested offline sandbox build are still required before a manual Flathub submission; the existing workflow does not publish to Flathub.
+**Actions → Build Linux Releases → Run workflow** builds standalone x64 and ARM64 Flatpaks without a local Linux computer. Download the `yutaka-linux-flatpak-x64` or `yutaka-linux-flatpak-arm64` artifact after success; the stable-release publisher also includes these packages once all platform workflows succeed for the same commit. CI verifies runtime libraries, sandbox launch and private database initialization.
+
+See [`tools/flatpak`](tools/flatpak/README.md) for installation and manual package updates. This GitHub package uses an AI-assisted manifest and precompiled upstream bundle; it is not eligible for Flathub submission. Flathub still requires an independently human-authored source-build manifest, completed screenshots/content rating and a tested offline build. The workflow does not publish to Flathub.
 
 ## 10.6 macOS build
 

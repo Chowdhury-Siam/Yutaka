@@ -133,7 +133,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for artifact in yutaka-linux-x64 yutaka-linux-arm64; do
+          for artifact in yutaka-linux-x64 yutaka-linux-arm64 yutaka-linux-flatpak-x64 yutaka-linux-flatpak-arm64; do
             gh run download "${{ steps.runs.outputs.linux_run }}" --name "$artifact" --dir release-assets
           done
 

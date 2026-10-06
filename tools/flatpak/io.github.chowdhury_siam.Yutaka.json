@@ -1,0 +1,37 @@
+{
+  "app-id": "io.github.chowdhury_siam.Yutaka",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "51",
+  "sdk": "org.gnome.Sdk",
+  "command": "yutaka",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=fallback-x11",
+    "--socket=wayland",
+    "--device=dri",
+    "--share=network",
+    "--talk-name=org.freedesktop.secrets"
+  ],
+  "modules": [
+    {
+      "name": "yutaka-github-bundle",
+      "buildsystem": "simple",
+      "build-commands": [
+        "mkdir -p /app/lib/yutaka",
+        "cp -a bundle/. /app/lib/yutaka/",
+        "install -Dm755 yutaka-launcher /app/bin/yutaka",
+        "install -Dm644 io.github.chowdhury_siam.Yutaka.desktop /app/share/applications/io.github.chowdhury_siam.Yutaka.desktop",
+        "install -Dm644 io.github.chowdhury_siam.Yutaka.metainfo.xml /app/share/metainfo/io.github.chowdhury_siam.Yutaka.metainfo.xml",
+        "install -Dm644 bundle/icon.png /app/share/icons/hicolor/512x512/apps/io.github.chowdhury_siam.Yutaka.png",
+        "install -Dm644 LICENSE /app/share/licenses/io.github.chowdhury_siam.Yutaka/LICENSE"
+      ],
+      "sources": [
+        { "type": "dir", "path": "payload", "dest": "bundle" },
+        { "type": "file", "path": "yutaka-launcher" },
+        { "type": "file", "path": "io.github.chowdhury_siam.Yutaka.desktop" },
+        { "type": "file", "path": "io.github.chowdhury_siam.Yutaka.metainfo.xml" },
+        { "type": "file", "path": "../../LICENSE" }
+      ]
+    }
+  ]
+}
