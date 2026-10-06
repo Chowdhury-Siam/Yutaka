@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 Yutaka contributors. Metadata licensed under CC0-1.0. -->
+<!-- Draft: add real desktop screenshots and a reviewed OARS rating before submission. -->
+<component type="desktop-application">
+  <id>io.github.chowdhury_siam.Yutaka</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Yutaka</name>
+  <summary>Track your accounts, expenses, budgets and loans</summary>
+  <developer id="io.github.chowdhury_siam">
+    <name>Chowdhury Siam</name>
+  </developer>
+  <description>
+    <p>Yutaka helps you keep track of your personal finances. Record income and
+    expenses, manage accounts and budgets, and follow loans and repayments.</p>
+    <p>Use Yutaka offline or connect your own self-hosted sync service to keep
+    your records synchronized across devices.</p>
+    <ul>
+      <li>Organize transactions with categories and date filters</li>
+      <li>Manage planned purchases, subscriptions and notes</li>
+      <li>Export analytics as PDF, spreadsheet or text reports</li>
+      <li>Create and restore local backups</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.chowdhury_siam.Yutaka.desktop</launchable>
+  <url type="homepage">https://github.com/Chowdhury-Siam/Yutaka</url>
+  <url type="bugtracker">https://github.com/Chowdhury-Siam/Yutaka/issues</url>
+  <url type="vcs-browser">https://github.com/Chowdhury-Siam/Yutaka</url>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <releases>
+    <release version="1.0.1279" date="2026-10-06">
+      <description>
+        <p>Prepare a Flatpak edition with private app storage and app updates
+        managed by Flatpak.</p>
+      </description>
+    </release>
+  </releases>
+</component>

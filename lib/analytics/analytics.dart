@@ -1122,7 +1122,9 @@ Future<String?> downloadAnalyticsReport(
       if (context.mounted) showSnack(context, '${variant == AnalyticsPdfVariant.summary ? 'Analytics' : 'Transaction history'} ${format.label} saved.');
       return savedPath;
     } catch (_) {
-      final documents = await getApplicationDocumentsDirectory();
+      final documents = kIsFlatpakBuild
+          ? await getApplicationSupportDirectory()
+          : await getApplicationDocumentsDirectory();
       final directory = Directory(p.join(documents.path, 'Yutaka', 'Analytics'));
       await directory.create(recursive: true);
       final file = File(p.join(directory.path, fileName));

@@ -186,7 +186,9 @@ class YutakaDatabase {
 
   Future<sql.Database> get db async {
     if (_db != null) return _db!;
-    final dir = await sql.getDatabasesPath();
+    final dir = kIsFlatpakBuild
+        ? (await getApplicationSupportDirectory()).path
+        : await sql.getDatabasesPath();
     final path = p.join(dir, 'yutaka_flutter.db');
     _db = await sql.openDatabase(
       path,
@@ -1727,7 +1729,9 @@ class BackupService {
   }
 
   static Future<Directory> backupStorageDirectory() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = kIsFlatpakBuild
+        ? await getApplicationSupportDirectory()
+        : await getApplicationDocumentsDirectory();
     final backupsDir = Directory(p.join(dir.path, 'backups'));
     if (!await backupsDir.exists()) {
       await backupsDir.create(recursive: true);
@@ -3579,11 +3583,11 @@ class AppController extends ChangeNotifier {
 
   bool get cloudSyncApprovalRequired => cloudSyncErrorCode == 'SYNC_APPROVAL_REQUIRED';
 
-  bool get hasAvailableUpdate => updateCheckOutcome == UpdateCheckOutcome.updateAvailable &&
+  bool get hasAvailableUpdate => !kIsFlatpakBuild && updateCheckOutcome == UpdateCheckOutcome.updateAvailable &&
       (kIsGooglePlayBuild ? googlePlayUpdateInfo?.available == true : latestGithubRelease != null);
   bool get hasPendingAndroidUpdate => pendingAndroidUpdatePath.isNotEmpty && pendingAndroidUpdateVersion.isNotEmpty && !_isPendingAndroidUpdateAlreadyInstalled();
   bool get hasPendingWindowsUpdate => pendingWindowsUpdatePath.isNotEmpty && pendingWindowsUpdateVersion.isNotEmpty && !_isPendingWindowsUpdateAlreadyInstalled();
-  bool get hasPendingLinuxUpdate => pendingLinuxUpdatePath.isNotEmpty && pendingLinuxUpdateVersion.isNotEmpty && !_isPendingLinuxUpdateAlreadyInstalled();
+  bool get hasPendingLinuxUpdate => !kIsFlatpakBuild && pendingLinuxUpdatePath.isNotEmpty && pendingLinuxUpdateVersion.isNotEmpty && !_isPendingLinuxUpdateAlreadyInstalled();
   bool get hasPendingMacOsUpdate => pendingMacOsUpdatePath.isNotEmpty && pendingMacOsUpdateVersion.isNotEmpty && !_isPendingMacOsUpdateAlreadyInstalled();
 
   Map<UpdateAssetKind, ReleaseAsset> get availableAndroidUpdateAssets {
@@ -4171,6 +4175,11 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> downloadLinuxUpdate({bool force = false}) async {
+    if (kIsFlatpakBuild) {
+      updateStatusMessage = kFlatpakUpdateMessage;
+      notifyListeners();
+      return;
+    }
     if (updateDownloadBusy || updateInstallBusy || _updateInstallLaunchBusy) return;
     if (!Platform.isLinux) {
       updateStatusMessage = 'In-app Linux update download is available on Linux only.';
@@ -4290,6 +4299,11 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> installPendingLinuxUpdate() async {
+    if (kIsFlatpakBuild) {
+      updateStatusMessage = kFlatpakUpdateMessage;
+      notifyListeners();
+      return;
+    }
     if (!Platform.isLinux) return;
     if (_isPendingLinuxUpdateAlreadyInstalled()) {
       _finishUpdateInstallation();
@@ -8359,7 +8373,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
   }
 
   void _scheduleAutomaticUpdateCheck({Duration delay = Duration.zero}) {
-    if (!mounted || _automaticUpdateRetryTimer?.isActive == true) return;
+    if (kIsFlatpakBuild || !mounted || _automaticUpdateRetryTimer?.isActive == true) return;
     if (delay == Duration.zero) {
       unawaited(_runAutomaticUpdateCheck());
       return;
@@ -21516,7 +21530,7 @@ class SettingsScreen extends StatelessWidget {
             ],
             const SectionHeader('App'),
             SettingsTile(icon: Icons.privacy_tip_rounded, title: 'Privacy & data', subtitle: state.privacyTelemetryEnabled ? 'Telemetry enabled • policy and data controls' : 'Telemetry off • policy and data controls', color: '#B4A5FF', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyAndDataScreen()))),
-            if (!kIsGooglePlayBuild)
+            if (!kIsGooglePlayBuild && !kIsFlatpakBuild)
               SettingsTile(icon: Icons.system_update_alt_rounded, title: 'Updates', subtitle: state.updateStatusMessage, color: kSleekAccentHex, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdatesScreen()))),
             SettingsTile(icon: Icons.tune_rounded, title: 'Advanced settings', subtitle: 'Defaults, account order, and data health', color: '#9AD0F5', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdvancedSettingsScreen()))),
             SettingsTile(icon: Icons.info_rounded, title: 'About app', subtitle: 'Version, credits, licenses, and links', color: '#86E3CE', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()))),

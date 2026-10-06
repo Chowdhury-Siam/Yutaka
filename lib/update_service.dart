@@ -236,6 +236,13 @@ class GithubUpdateService {
     required String installedVersion,
     bool includePrereleases = includePrereleaseUpdates,
   }) async {
+    if (kIsFlatpakBuild) {
+      return UpdateCheckResult(
+        outcome: UpdateCheckOutcome.noReleaseAvailable,
+        installedVersion: SemanticVersion.tryParse(installedVersion),
+        message: kFlatpakUpdateMessage,
+      );
+    }
     final installed = SemanticVersion.tryParse(installedVersion);
     if (!includePrereleases) {
       final manifestRelease = await _fetchStableReleaseManifest();
@@ -786,7 +793,7 @@ class LinuxUpdateInstaller {
   const LinuxUpdateInstaller._();
 
   static Future<bool> install(String path) async {
-    if (!Platform.isLinux) return false;
+    if (!Platform.isLinux || kIsFlatpakBuild) return false;
     final file = File(path);
     if (!await file.exists()) return false;
     final lower = file.path.toLowerCase();

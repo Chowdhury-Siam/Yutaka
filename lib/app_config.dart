@@ -33,9 +33,13 @@ const String kSleekAccentHex = '#00BD91';
 const String kLegacyStarterCashIconHex = '#78D8E8';
 
 const appTitle = 'Yutaka';
-const appVersion = String.fromEnvironment('YUTAKA_APP_VERSION', defaultValue: '1.0.1278');
+const appVersion = String.fromEnvironment('YUTAKA_APP_VERSION', defaultValue: '1.0.1279');
 const kAndroidDistribution = appFlavor ?? String.fromEnvironment('YUTAKA_ANDROID_DISTRIBUTION', defaultValue: 'direct');
 const bool kIsGooglePlayBuild = kAndroidDistribution == 'play';
+const kLinuxDistribution = String.fromEnvironment('YUTAKA_LINUX_DISTRIBUTION', defaultValue: 'direct');
+final bool kIsFlatpakBuild = !kIsWeb && Platform.isLinux &&
+    (kLinuxDistribution == 'flatpak' || File('/.flatpak-info').existsSync());
+const kFlatpakUpdateMessage = 'Updates are managed by your software center or Flatpak.';
 const kLowEndFriendlyUi = true;
 const backupPassword = 'YOUR_SECRET_PASSWORD';
 const kSyncAdminTelegramUrl = 'https://t.me/Ch0wdhury_Siam';

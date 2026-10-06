@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Yutaka
+Comment=Track accounts, expenses, budgets and loans
+Exec=yutaka
+Icon=io.github.chowdhury_siam.Yutaka
+Terminal=false
+Categories=Office;Finance;
+Keywords=money;budget;expense;income;loan;
+StartupNotify=true
+StartupWMClass=yutaka

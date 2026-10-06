@@ -13,6 +13,7 @@ on:
       - "linux/**"
       - "macos/**"
       - "tools/linux/**"
+      - "tools/flatpak/**"
       - "tools/android/**"
       - "tools/installers/**"
       - "tools/ci/**"
@@ -210,6 +211,13 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tools/ci -p 'test_prepare_sqlite_asset.py'
           python3 tools/ci/prepare_sqlite_asset.py --arch "${{ matrix.arch }}"
+
+      - name: Verify direct and Flatpak distribution behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter test --no-pub test/flatpak_distribution_test.dart
+          flutter test --no-pub --dart-define=YUTAKA_LINUX_DISTRIBUTION=flatpak test/flatpak_distribution_test.dart
 
       - name: Build Linux release
         shell: bash
