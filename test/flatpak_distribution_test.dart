@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart' as sql;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart' as ffi;
@@ -11,22 +11,32 @@ import 'package:yutaka/app_config.dart';
 import 'package:yutaka/main.dart';
 import 'package:yutaka/update_service.dart';
 
+class _TestPaths extends PathProviderPlatform {
+  _TestPaths(this.path);
+
+  final String path;
+
+  @override
+  Future<String?> getApplicationSupportPath() async => path;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async {
+    fail('Flatpak storage must not use the host Documents directory.');
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('Flatpak database and backups stay in private persistent storage', () async {
     final directory = await Directory.systemTemp.createTemp('yutaka-flatpak-data-');
-    const channel = MethodChannel('plugins.flutter.io/path_provider');
-    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(channel, (call) async {
-      if (call.method == 'getApplicationSupportDirectory') return directory.path;
-      fail('Flatpak storage must not use the host Documents directory.');
-    });
+    final previousPaths = PathProviderPlatform.instance;
     final previousFactory = sql.databaseFactory;
-    ffi.sqfliteFfiInit();
-    sql.databaseFactory = ffi.databaseFactoryFfi;
     sql.Database? database;
     try {
+      PathProviderPlatform.instance = _TestPaths(directory.path);
+      ffi.sqfliteFfiInit();
+      sql.databaseFactory = ffi.databaseFactoryFfiNoIsolate;
       database = await YutakaDatabase().db;
       expect(database.path, '${directory.path}/yutaka_flutter.db');
       await database.execute('CREATE TABLE flatpak_persistence_probe (value TEXT)');
@@ -40,7 +50,7 @@ void main() {
     } finally {
       if (database != null && database.isOpen) await database.close();
       sql.databaseFactory = previousFactory;
-      messenger.setMockMethodCallHandler(channel, null);
+      PathProviderPlatform.instance = previousPaths;
       await directory.delete(recursive: true);
     }
   }, skip: !kIsFlatpakBuild);

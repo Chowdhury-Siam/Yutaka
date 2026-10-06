@@ -216,8 +216,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          flutter test --no-pub test/flatpak_distribution_test.dart
-          flutter test --no-pub --dart-define=YUTAKA_LINUX_DISTRIBUTION=flatpak test/flatpak_distribution_test.dart
+          flutter test --no-pub --reporter expanded test/flatpak_distribution_test.dart
+          flutter test --no-pub --reporter expanded --dart-define=YUTAKA_LINUX_DISTRIBUTION=flatpak test/flatpak_distribution_test.dart
 
       - name: Build Linux release
         shell: bash

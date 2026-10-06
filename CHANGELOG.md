@@ -1,3 +1,10 @@
+## Flatpak storage test maintenance (1.0.1279+323)
+
+- Replace the method-channel-only path mock with a PathProviderPlatform fake, following the plugin testing guidance.
+- Use the in-process SQLite FFI test factory and restore test globals after initialization failures.
+- Declare the already-resolved platform interface as a development dependency and enable expanded Linux test reporting.
+- Keep app and Worker versions unchanged for this test/CI-only fix.
+
 ## 1.0.1279+323
 
 - Prepare a Flatpak edition: detect its distribution flag or sandbox, hide Settings Updates, skip startup app-update checks, and refuse GitHub app checks and Linux installer downloads/launches.
