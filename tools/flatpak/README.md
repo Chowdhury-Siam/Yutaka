@@ -22,6 +22,12 @@ inside the installed runtime, launches the app under Xvfb, and checks that its
 database was initialized in private app storage before uploading the package.
 This smoke check does not replace interactive backup, export and sync testing.
 
+The Linux runner disables optional CMake JNI discovery, including a cached
+`JNI_FOUND` result. `path_provider_android` brings the JNI plugin transitively,
+but Linux uses `path_provider_linux` and does not need a Java VM. This keeps
+`libdartjni.so` out of the Linux bundles on both architectures while leaving
+the strict Flatpak dependency check intact.
+
 Successful runs provide `yutaka-linux-flatpak-x64` and
 `yutaka-linux-flatpak-arm64` artifacts containing
 `Yutaka-v<version>-linux-<arch>.flatpak`. The existing stable-release publisher

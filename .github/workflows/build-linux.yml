@@ -167,7 +167,7 @@ jobs:
       - name: Generate Linux platform files
         run: flutter create --platforms=linux --project-name yutaka --no-pub .
 
-      - name: Apply Yutaka Linux branding
+      - name: Configure Yutaka Linux runner
         shell: bash
         run: |
           set -euo pipefail
@@ -179,6 +179,14 @@ jobs:
           text = path.read_text()
           text = text.replace('gtk_window_set_title(window, "yutaka")', 'gtk_window_set_title(window, "Yutaka")')
           text = text.replace('gtk_header_bar_set_title(header_bar, "yutaka")', 'gtk_header_bar_set_title(header_bar, "Yutaka")')
+          path.write_text(text)
+          path = Path('linux/CMakeLists.txt')
+          text = path.read_text()
+          plugins = 'include(flutter/generated_plugins.cmake)'
+          assert text.count(plugins) == 1, 'Flutter Linux plugin include changed'
+          # path_provider_android pulls in JNI; Linux uses path_provider_linux.
+          # Reset JNI_FOUND too, in case the restored build cache found a JDK.
+          text = text.replace(plugins, 'set(CMAKE_DISABLE_FIND_PACKAGE_JNI TRUE)\nset(JNI_FOUND FALSE)\n' + plugins)
           path.write_text(text)
           PY
 
@@ -251,6 +259,7 @@ jobs:
             find build/linux -maxdepth 6 -type f -print || true
             exit 1
           fi
+          test ! -e "$BUNDLE_DIR/lib/libdartjni.so"
           tar -C "$BUNDLE_DIR" -czf "artifacts/Yutaka-v${YUTAKA_APP_VERSION_NAME}-linux-${{ matrix.arch }}.tar.gz" .
           echo "YUTAKA_LINUX_BUNDLE=$BUNDLE_DIR" >> "$GITHUB_ENV"
 
