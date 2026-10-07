@@ -286,14 +286,20 @@ jobs:
       - name: Verify preinstalled Android SDK 36 and NDK 28
         shell: bash
         run: |
+          set -euo pipefail
           packages=()
           [ -d "$ANDROID_HOME/platforms/android-36" ] || packages+=("platforms;android-36")
           [ -d "$ANDROID_HOME/build-tools/36.0.0" ] || packages+=("build-tools;36.0.0")
           [ -d "$ANDROID_HOME/ndk/28.2.13676358" ] || packages+=("ndk;28.2.13676358")
           if [ ${#packages[@]} -gt 0 ]; then
             echo "Installing missing Android SDK packages: ${packages[*]}"
-            yes | sdkmanager --licenses >/dev/null 2>&1 || true
-            sdkmanager "${packages[@]}"
+            sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+            if [ ! -x "$sdkmanager" ]; then
+              echo "::error::Android SDK manager is missing: $sdkmanager" >&2
+              exit 1
+            fi
+            { yes 2>/dev/null || true; } | "$sdkmanager" --sdk_root="$ANDROID_HOME" --licenses >/dev/null
+            "$sdkmanager" --sdk_root="$ANDROID_HOME" "${packages[@]}"
           else
             echo "Required Android SDK/NDK packages are already available on the runner."
           fi
