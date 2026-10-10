@@ -227,16 +227,25 @@ void main() {
       'created_on': 100, 'updated_on': 100,
     };
     await controller.database.upsertSyncEntityRow('notes', note);
+    // Model a note already present on both devices, not a legacy local-only
+    // note that the first sync must adopt before it starts pulling.
+    await controller.database.saveEntityVersion('notes', 'latency-note', 1);
     await controller.database.upsertSyncEntityRow('accounts', account(100, 100));
     controller.notes = [YutakaNote.fromMap(note)];
     final pullStarted = Completer<void>();
     final releasePull = Completer<void>();
     final deletionUploaded = Completer<Map>();
+    Future<void>? activeSync;
     var pullCount = 0;
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() async {
       controller.cloudSyncEnabled = false;
       if (!releasePull.isCompleted) releasePull.complete();
+      if (activeSync != null) await activeSync;
+      await Future.doWhile(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        return controller.cloudSyncOperationBusy;
+      }).timeout(const Duration(seconds: 2));
       await server.close(force: true);
     });
     server.listen((request) async {
@@ -251,11 +260,12 @@ void main() {
         request.response.write('{"changes":[],"cursor":0,"hasMore":false}');
       } else if (request.uri.path == '/v1/sync/push') {
         final operations = (jsonDecode(body)['operations'] as List).cast<Map>();
-        final deletion = operations.singleWhere((op) => op['entityId'] == 'latency-note');
+        final deletions = operations.where((op) =>
+            op['entityId'] == 'latency-note' && op['operation'] == 'delete').toList();
         request.response.write(jsonEncode({'accepted': [for (final op in operations) {
-          'operationId': op['operationId'], 'version': 1,
+          'operationId': op['operationId'], 'version': 2,
         }], 'conflicts': []}));
-        deletionUploaded.complete(deletion);
+        if (deletions.isNotEmpty) deletionUploaded.complete(deletions.single);
       } else if (request.uri.path == '/v1/profile-media/meta') {
         request.response.write('{"media":null}');
       } else {
@@ -271,8 +281,9 @@ void main() {
     controller.syncAccessToken = 'access';
     controller.syncRefreshToken = 'refresh';
     controller.syncDeviceId = 'device-one';
-    final activeSync = controller.performMultiDeviceSync(silent: true);
+    activeSync = controller.performMultiDeviceSync(silent: true);
     await pullStarted.future.timeout(const Duration(seconds: 2));
+    expect(controller.cloudSyncOperationBusy, isTrue);
     await controller.deleteNote('latency-note');
     expect(controller.notes, isEmpty);
     expect(deletionUploaded.isCompleted, isFalse);
@@ -281,6 +292,7 @@ void main() {
     final uploaded = await deletionUploaded.future.timeout(const Duration(seconds: 1));
     expect(uploaded['operation'], 'delete');
     expect(uploaded['entityType'], 'notes');
+    expect(uploaded['baseVersion'], 1);
     await Future.doWhile(() async {
       await Future<void>.delayed(const Duration(milliseconds: 5));
       return controller.cloudSyncOperationBusy;

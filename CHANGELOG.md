@@ -1,3 +1,9 @@
+## Sync regression fixture maintenance (1.0.1283+327)
+
+- Seed the blocked-pull deletion regression with an already-synced note so the legacy-note migration cannot trigger an unrelated initial upload.
+- Detect actual delete operations, verify their base version and wait for active sync requests before disposing the test controller.
+- Preserve the one-second follow-up upload deadline and keep app and Worker versions unchanged for this test-only correction.
+
 ## 1.0.1283+327
 
 - Upload note deletions immediately after durable local deletion, update the note list directly and avoid reloading unrelated finance tables first.
