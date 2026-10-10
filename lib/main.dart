@@ -11759,6 +11759,7 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
+  static const pageCount = 5;
   final controller = PageController();
   int index = 0;
   bool choosingInitialSetup = false;
@@ -11902,6 +11903,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             await controller.nextPage(duration: AppMotion.medium, curve: Curves.easeOutCubic);
                           },
                         ),
+                        LoanSetupPane(
+                          state: state,
+                          onSkip: () => controller.nextPage(duration: AppMotion.medium, curve: Curves.easeOutCubic),
+                        ),
                         _OnboardingPane(
                           icon: Icons.privacy_tip_rounded,
                           title: 'Private local database',
@@ -11923,7 +11928,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         child: Row(
                           children: [
                             Row(
-                              children: List.generate(4, (i) => AnimatedContainer(
+                              children: List.generate(pageCount, (i) => AnimatedContainer(
                                     duration: AppMotion.medium,
                                     width: i == index ? 24 : 8,
                                     height: 8,
@@ -11948,13 +11953,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                   await _chooseInitialSetup(syncAccountCreated: signedInSetupPending);
                                   return;
                                 }
-                                if (index < 3) {
+                                if (index < pageCount - 1) {
                                   await controller.nextPage(duration: AppMotion.medium, curve: Curves.easeOutCubic);
                                 } else {
                                   await state.completeOnboarding();
                                 }
                               },
-                              child: Text(index == 0 && signedInSetupPending ? 'Continue' : index < 3 ? 'Next' : 'Start'),
+                              child: Text(index == 0 && signedInSetupPending ? 'Continue' : index < pageCount - 1 ? 'Next' : 'Start'),
                             ),
                           ],
                         ),
@@ -12164,6 +12169,8 @@ class AccountSetupPane extends StatelessWidget {
           const SizedBox(height: 24),
           Text('Set up your accounts', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900)),
           const SizedBox(height: 12),
+          const Text('Enter what each account holds today, including any borrowed money still in it and excluding money already lent out. Add outstanding loans in the next step without changing these balances.', textAlign: TextAlign.center),
+          const SizedBox(height: 8),
           const Text('Keep the starter accounts, add your own, or remove any account you do not need. Tap an account to edit or delete it.', textAlign: TextAlign.center),
           const SizedBox(height: 24),
           ...state.accounts.map((a) => Padding(
@@ -12187,6 +12194,78 @@ class AccountSetupPane extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class LoanSetupPane extends StatelessWidget {
+  const LoanSetupPane({super.key, required this.state, required this.onSkip});
+  final AppController state;
+  final Future<void> Function() onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    return OnboardingPageFrame(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const YutakaAppIcon(size: 82),
+          const SizedBox(height: 24),
+          Text('Add existing loans', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 12),
+          const Text('Already owe someone money, or waiting to be repaid? Add the amount still owed now. Loans added here leave your current account balances unchanged.', textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          const ExpressiveCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Avoid counting old money twice', style: TextStyle(fontWeight: FontWeight.w900)),
+                SizedBox(height: 8),
+                Text('If your current balance is 1,000 and already includes 200 borrowed, record 200 as an existing loan. Your balance stays 1,000. Recording it as new money would incorrectly increase it to 1,200.'),
+                SizedBox(height: 8),
+                Text('Use the amount still owed today, not the original amount before repayments. Keep today’s start date for this opening balance; interest runs from that date.'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...state.loans.map((loan) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: ExpressiveCard(
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(state.loanContactOf(loan.contactId)?.name ?? 'Unknown person'),
+                    subtitle: Text(loan.isLent ? 'They owe you' : 'You owe them'),
+                    trailing: Text(state.format(state.computationFor(loan.id).outstanding)),
+                    onTap: () => showLoanEditorSheet(context, loan: loan),
+                  ),
+                ),
+              )),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              FilledButton.icon(
+                onPressed: () => showLoanEditorSheet(context, existingLoan: true, defaultDirection: LoanDirection.borrowed),
+                icon: const Icon(Icons.south_west_rounded),
+                label: const Text('Money I owe'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => showLoanEditorSheet(context, existingLoan: true),
+                icon: const Icon(Icons.north_east_rounded),
+                label: const Text('Money owed to me'),
+              ),
+              TextButton.icon(
+                onPressed: onSkip,
+                icon: const Icon(Icons.skip_next_rounded),
+                label: const Text('Skip loans'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text('You can add these later: choose Existing loan in Loans. Choose New money only when money is moving now.', textAlign: TextAlign.center),
         ],
       ),
     );
@@ -22827,11 +22906,6 @@ class _WorkerDeploymentScreenState extends State<WorkerDeploymentScreen> {
                         onPressed: _deploying ? null : () => _launchSetupLink('https://dash.cloudflare.com/'),
                         icon: const Icon(Icons.open_in_new_rounded),
                         label: const Text('Open Cloudflare'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _deploying ? null : () => _launchSetupLink('https://dash.cloudflare.com/profile/api-tokens'),
-                        icon: const Icon(Icons.key_rounded),
-                        label: const Text('Create API token'),
                       ),
                     ],
                   ),

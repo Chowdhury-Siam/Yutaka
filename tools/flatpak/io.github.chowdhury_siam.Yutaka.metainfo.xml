@@ -32,6 +32,12 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1285" date="2026-10-11">
+      <description><p>Add existing-loan setup without changing current account balances.</p></description>
+    </release>
+    <release version="1.0.1284" date="2026-10-11">
+      <description><p>Remove the Create API token shortcut from the deployment guide.</p></description>
+    </release>
     <release version="1.0.1283" date="2026-10-11">
       <description><p>Reduce note deletion and queued change synchronization delays.</p></description>
     </release>

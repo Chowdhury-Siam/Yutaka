@@ -314,21 +314,22 @@ Future<LoanInterestConfiguration?> showLoanInterestConfiguration(
   }
 }
 
-Future<void> showLoanEditorSheet(BuildContext context, {Loan? loan, LoanDirection defaultDirection = LoanDirection.lent}) {
+Future<void> showLoanEditorSheet(BuildContext context, {Loan? loan, LoanDirection defaultDirection = LoanDirection.lent, bool existingLoan = false}) {
   return showYutakaPopup<void>(
     context,
     maxWidth: 600,
     maxHeight: 760,
     barrierDismissible: false,
-    child: _LoanEditorSheet(loan: loan, defaultDirection: defaultDirection),
+    child: _LoanEditorSheet(loan: loan, defaultDirection: defaultDirection, existingLoan: existingLoan),
   );
 }
 
 class _LoanEditorSheet extends StatefulWidget {
-  const _LoanEditorSheet({required this.loan, required this.defaultDirection});
+  const _LoanEditorSheet({required this.loan, required this.defaultDirection, required this.existingLoan});
 
   final Loan? loan;
   final LoanDirection defaultDirection;
+  final bool existingLoan;
 
   @override
   State<_LoanEditorSheet> createState() => _LoanEditorSheetState();
@@ -344,6 +345,7 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
   String? contactId;
   String? accountId;
   bool busy = false;
+  late bool existingLoan;
   late final TextEditingController amount;
   late final TextEditingController rate;
   late final TextEditingController note;
@@ -355,6 +357,7 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
   void initState() {
     super.initState();
     final loan = widget.loan;
+    existingLoan = widget.existingLoan;
     direction = loan?.direction ?? widget.defaultDirection;
     interestType = loan?.interestType ?? LoanInterestType.none;
     interestPeriod = loan?.interestPeriod ?? LoanInterestPeriod.yearly;
@@ -423,10 +426,11 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
     if (dueDate != null && dueDate!.isBefore(startDate)) return showSnack(context, 'Due date cannot be before the start date.');
     final movementAccountId = accountId;
     final recordDisbursal = !editing &&
+        !existingLoan &&
         state.loanRecordTransactionsByDefault &&
         movementAccountId != null &&
         movementAccountId.isNotEmpty;
-    if (!editing && state.loanRecordTransactionsByDefault &&
+    if (!editing && !existingLoan && state.loanRecordTransactionsByDefault &&
         (movementAccountId == null || movementAccountId.isEmpty)) {
       return showSnack(context, 'Select an account.');
     }
@@ -487,11 +491,32 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
         children: [
           Row(
             children: [
-              Expanded(child: Text(editing ? 'Edit loan' : 'New loan', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900))),
+              Expanded(child: Text(editing ? 'Edit loan' : widget.existingLoan ? 'Existing loan' : 'New loan', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900))),
               IconButton(onPressed: busy ? null : () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
             ],
           ),
           const SizedBox(height: 10),
+          if (!editing) ...[
+            if (!widget.existingLoan) SleekPillSelector<bool>(
+              options: const [
+                SleekPillOption(value: false, label: 'New money', icon: Icons.payments_rounded),
+                SleekPillOption(value: true, label: 'Existing loan', icon: Icons.history_rounded),
+              ],
+              selected: existingLoan,
+              onChanged: (value) => setState(() => existingLoan = value),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              existingLoan
+                  ? 'Track only the amount still owed. Account balances stay unchanged. Interest starts from Time • Date; keep today for an opening balance.'
+                  : state.loanRecordTransactionsByDefault
+                      ? 'This records money moving now and changes the selected account balance. For an old loan already reflected in your balance, choose Existing loan.'
+                      : 'Account recording is off in loan settings. This loan will leave account balances unchanged.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSleekMuted),
+            ),
+            const SizedBox(height: 12),
+          ],
           SleekPillSelector<LoanDirection>(
             options: const [
               SleekPillOption(value: LoanDirection.lent, label: 'I gave', icon: Icons.north_east_rounded),
@@ -515,10 +540,10 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
             onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             controller: amount,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(labelText: editing && state.paymentsForLoan(widget.loan!.id).any((payment) => payment.isAddition) ? 'Initial amount' : 'Amount', prefixText: state.currencyPosition == CurrencyPosition.prefix ? state.currencySymbol : null, suffixText: state.currencyPosition == CurrencyPosition.suffix ? state.currencySymbol : null),
+            decoration: InputDecoration(labelText: !editing && existingLoan ? 'Amount still owed' : editing && state.paymentsForLoan(widget.loan!.id).any((payment) => payment.isAddition) ? 'Initial amount' : 'Amount', prefixText: state.currencyPosition == CurrencyPosition.prefix ? state.currencySymbol : null, suffixText: state.currencyPosition == CurrencyPosition.suffix ? state.currencySymbol : null),
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
           ),
-          if ((!editing && state.loanRecordTransactionsByDefault) ||
+          if ((!editing && !existingLoan && state.loanRecordTransactionsByDefault) ||
               (editing && widget.loan?.disbursalTransactionId != null)) ...[
             const SizedBox(height: 12),
             AppleSelectionField(

@@ -1,3 +1,15 @@
+## 1.0.1285+329
+
+- Add an optional existing-loans step after account setup, explain current balances and outstanding debt, and prevent opening loans from changing account money.
+- Add Existing loan / New money choices to normal loan creation, including guidance on double counting and the date used for opening interest. Existing loans can be entered without an account.
+- Keep new loan transfers and future repayments working normally, retain restore/login setup shortcuts, and add SQLite/editor and responsive onboarding regressions.
+- Synchronize app, Android and Worker release metadata; preserve all previous fixes.
+
+## 1.0.1284+328
+
+- Remove the Create API token button from Deploy Database.
+- Synchronize app, Android and Worker release metadata while preserving previous fixes.
+
 ## Sync regression fixture maintenance (1.0.1283+327)
 
 - Seed the blocked-pull deletion regression with an already-synced note so the legacy-note migration cannot trigger an unrelated initial upload.
