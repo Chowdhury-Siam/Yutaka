@@ -515,7 +515,7 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
             onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             controller: amount,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(labelText: 'Amount', prefixText: state.currencyPosition == CurrencyPosition.prefix ? state.currencySymbol : null, suffixText: state.currencyPosition == CurrencyPosition.suffix ? state.currencySymbol : null),
+            decoration: InputDecoration(labelText: editing && state.paymentsForLoan(widget.loan!.id).any((payment) => payment.isAddition) ? 'Initial amount' : 'Amount', prefixText: state.currencyPosition == CurrencyPosition.prefix ? state.currencySymbol : null, suffixText: state.currencyPosition == CurrencyPosition.suffix ? state.currencySymbol : null),
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
           ),
           if ((!editing && state.loanRecordTransactionsByDefault) ||
@@ -624,20 +624,21 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
   }
 }
 
-Future<void> showLoanPaymentSheet(BuildContext context, {required Loan loan, double? initialAmount}) {
+Future<void> showLoanPaymentSheet(BuildContext context, {required Loan loan, double? initialAmount, bool isAddition = false}) {
   return showYutakaPopup<void>(
     context,
     maxWidth: 560,
     maxHeight: 700,
     barrierDismissible: false,
-    child: _LoanPaymentSheet(loan: loan, initialAmount: initialAmount),
+    child: _LoanPaymentSheet(loan: loan, initialAmount: initialAmount, isAddition: isAddition),
   );
 }
 
 class _LoanPaymentSheet extends StatefulWidget {
-  const _LoanPaymentSheet({required this.loan, this.initialAmount});
+  const _LoanPaymentSheet({required this.loan, this.initialAmount, this.isAddition = false});
   final Loan loan;
   final double? initialAmount;
+  final bool isAddition;
 
   @override
   State<_LoanPaymentSheet> createState() => _LoanPaymentSheetState();
@@ -687,7 +688,10 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
     if (busy) return;
     final state = context.read<AppController>();
     final value = double.tryParse(amount.text.trim()) ?? 0;
-    if (!value.isFinite || value <= 0) return showSnack(context, 'Enter a valid payment amount.');
+    if (!value.isFinite || value <= 0) return showSnack(context, 'Enter a valid amount.');
+    if (roundLoanMoney(value) <= 0) {
+      return showSnack(context, 'Enter an amount of at least 0.01.');
+    }
     if (recordInAccount && (accountId == null || accountId!.isEmpty)) return showSnack(context, 'Select an account.');
     setState(() => busy = true);
     try {
@@ -696,6 +700,7 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
         id: _uuid.v4(),
         loanId: widget.loan.id,
         amount: roundLoanMoney(value),
+        isAddition: widget.isAddition,
         interestComponent: 0,
         principalComponent: roundLoanMoney(value),
         paidOn: paidOn,
@@ -706,7 +711,9 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
       await state.addLoanPayment(payment, recordInAccount: recordInAccount, accountId: accountId);
       if (mounted) {
         final remaining = loanNonNegative(state.computationFor(widget.loan.id).outstanding);
-        showSnack(context, remaining <= 0.005 ? 'Payment recorded · settled.' : 'Payment recorded · ${state.format(remaining)} left.');
+        showSnack(context, widget.isAddition
+            ? 'Money added · ${state.format(remaining)} remaining.'
+            : remaining <= 0.005 ? 'Payment recorded · settled.' : 'Payment recorded · ${state.format(remaining)} left.');
         Navigator.pop(context);
       }
     } catch (error) {
@@ -721,7 +728,8 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
     final state = context.watch<AppController>();
     final computation = state.computationFor(widget.loan.id, at: paidOn);
     final remaining = loanNonNegative(computation.outstanding);
-    final value = double.tryParse(amount.text) ?? 0;
+    final parsedValue = double.tryParse(amount.text) ?? 0;
+    final value = parsedValue.isFinite ? parsedValue : 0.0;
     final split = allocateLoanPayment(widget.loan, state.paymentsForLoan(widget.loan.id), value, paidOn);
     final account = state.accountOf(accountId ?? '');
     final content = Column(
@@ -729,7 +737,7 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
         children: [
           Row(
             children: [
-              Expanded(child: Text('Record payment', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900))),
+              Expanded(child: Text(widget.isAddition ? 'Add money' : 'Record payment', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900))),
               IconButton(onPressed: busy ? null : () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
             ],
           ),
@@ -741,31 +749,36 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
             controller: amount,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(labelText: 'Payment amount', suffixText: state.currencyPosition == CurrencyPosition.suffix ? state.currencySymbol : null),
+            readOnly: busy,
+            decoration: InputDecoration(labelText: widget.isAddition ? 'Amount to add' : 'Payment amount', suffixText: state.currencyPosition == CurrencyPosition.suffix ? state.currencySymbol : null),
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              ActionChip(label: const Text('Full'), onPressed: () => _fill(remaining)),
-              ActionChip(label: const Text('Half'), onPressed: () => _fill(remaining / 2)),
-              if (computation.emiAmount != null) ActionChip(label: const Text('Monthly'), onPressed: () => _fill(computation.emiAmount!)),
-              ActionChip(label: const Text('Round up'), onPressed: () => _fill((remaining / 100).ceil() * 100)),
-            ],
-          ),
-          if (value > 0) ...[
+          if (!widget.isAddition) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ActionChip(label: const Text('Full'), onPressed: () => _fill(remaining)),
+                ActionChip(label: const Text('Half'), onPressed: () => _fill(remaining / 2)),
+                if (computation.emiAmount != null) ActionChip(label: const Text('Monthly'), onPressed: () => _fill(computation.emiAmount!)),
+                ActionChip(label: const Text('Round up'), onPressed: () => _fill((remaining / 100).ceil() * 100)),
+              ],
+            ),
+          ],
+          if (value.isFinite && value > 0) ...[
             const SizedBox(height: 12),
             ExpressiveCard(
               padding: const EdgeInsets.all(12),
               child: Text(
-                '${state.format(split.interest)} interest · ${state.format(split.principal)} principal\nRemaining after this: ${state.format(loanNonNegative(remaining - value))}',
+                widget.isAddition
+                    ? '${widget.loan.isLent ? 'Lend' : 'Borrow'} ${state.format(value)} more\nPrincipal after this: ${state.format(computation.principal + value)}'
+                    : '${state.format(split.interest)} interest · ${state.format(split.principal)} principal\nRemaining after this: ${state.format(loanNonNegative(remaining - value))}',
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ),
           ],
-          if (value > remaining + 0.005) ...[
+          if (!widget.isAddition && value.isFinite && value > remaining + 0.005) ...[
             const SizedBox(height: 8),
             Text(
               'This overpays by ${state.format(value - remaining)}.',
@@ -774,7 +787,7 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
           ],
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: () async {
+            onPressed: busy ? null : () async {
               final selected = await pickDate(context, paidOn);
               if (selected != null && mounted) {
                 setState(() => paidOn = DateTime(
@@ -791,7 +804,7 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: () async {
+            onPressed: busy ? null : () async {
               final selected = await pickTime(context, TimeOfDay.fromDateTime(paidOn));
               if (selected != null && mounted) {
                 setState(() => paidOn = DateTime(
@@ -810,7 +823,7 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: recordInAccount,
-            onChanged: (value) => setState(() => recordInAccount = value),
+            onChanged: busy ? null : (value) => setState(() => recordInAccount = value),
             title: const Text('Record this in an account', style: TextStyle(fontWeight: FontWeight.w800)),
             subtitle: const Text('Updates the balance but stays outside reports.'),
           ),
@@ -819,6 +832,7 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
               label: 'Account',
               option: account == null ? null : optionFromAccount(account, state),
               onTap: () async {
+                if (busy) return;
                 final selected = await showAppleWheelSelectionSheet(
                   context,
                   title: 'Choose an account',
@@ -833,13 +847,14 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
             contextMenuBuilder: yutakaTextFieldContextMenu,
             enableInteractiveSelection: true,
             onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+            readOnly: busy,
             controller: note, minLines: 1, maxLines: 3, decoration: const InputDecoration(labelText: 'Note (optional)')),
           const SizedBox(height: 20),
           Row(
             children: [
               Expanded(child: OutlinedButton(onPressed: busy ? null : () => Navigator.pop(context), child: const Text('Cancel'))),
               const SizedBox(width: 10),
-              Expanded(flex: 2, child: FilledButton(onPressed: busy ? null : _save, child: Text(busy ? 'Saving...' : 'Save payment'))),
+              Expanded(flex: 2, child: FilledButton(onPressed: busy ? null : _save, child: Text(busy ? 'Saving...' : widget.isAddition ? 'Add money' : 'Save payment'))),
             ],
           ),
         ],

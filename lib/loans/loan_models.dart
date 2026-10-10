@@ -239,6 +239,7 @@ class LoanPayment {
     required this.id,
     required this.loanId,
     required this.amount,
+    this.isAddition = false,
     required this.interestComponent,
     required this.principalComponent,
     required this.paidOn,
@@ -251,6 +252,8 @@ class LoanPayment {
   final String id;
   final String loanId;
   final double amount;
+  /// Additional money lent/borrowed, stored alongside repayments as a dated event.
+  final bool isAddition;
   final double interestComponent;
   final double principalComponent;
   final DateTime paidOn;
@@ -263,6 +266,7 @@ class LoanPayment {
     String? id,
     String? loanId,
     double? amount,
+    bool? isAddition,
     double? interestComponent,
     double? principalComponent,
     DateTime? paidOn,
@@ -276,6 +280,7 @@ class LoanPayment {
         id: id ?? this.id,
         loanId: loanId ?? this.loanId,
         amount: amount ?? this.amount,
+        isAddition: isAddition ?? this.isAddition,
         interestComponent: interestComponent ?? this.interestComponent,
         principalComponent: principalComponent ?? this.principalComponent,
         paidOn: paidOn ?? this.paidOn,
@@ -289,6 +294,7 @@ class LoanPayment {
         'id': id,
         'loan_id': loanId,
         'amount': amount,
+        'is_addition': isAddition ? 1 : 0,
         'interest_component': interestComponent,
         'principal_component': principalComponent,
         'paid_on': dateToDb(paidOn),
@@ -302,6 +308,7 @@ class LoanPayment {
         id: map['id']?.toString() ?? '',
         loanId: map['loan_id']?.toString() ?? '',
         amount: (map['amount'] as num? ?? 0).toDouble(),
+        isAddition: (map['is_addition'] as num? ?? 0).toInt() == 1,
         interestComponent: (map['interest_component'] as num? ?? 0).toDouble(),
         principalComponent: (map['principal_component'] as num? ?? 0).toDouble(),
         paidOn: dateFromDb(map['paid_on']),

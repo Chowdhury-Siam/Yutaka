@@ -32,7 +32,10 @@
     <control>touch</control>
   </supports>
   <releases>
-    <release version="1.0.1279" date="2026-10-06">
+    <release version="1.0.1281" date="2026-10-10">
+      <description><p>Improve cloud sync retries, conflict recovery and session renewal.</p></description>
+    </release>
+    <release version="1.0.1280" date="2026-10-10">
       <description>
         <p>Prepare a Flatpak edition with private app storage and app updates
         managed by Flatpak.</p>

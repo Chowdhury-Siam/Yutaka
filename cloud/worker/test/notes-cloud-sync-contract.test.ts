@@ -24,8 +24,10 @@ test('existing offline notes migrate with atomic, account-specific one-time adop
   assert.match(migration, /NOT EXISTS \(\s*SELECT 1 FROM sync_entity_versions/);
   assert.match(migration, /txn\.insert\('sync_state'/);
   assert.match(app, /enqueueLegacyNotesForCloudSync\(/);
-  assert.match(app, /if \(entityType == 'notes'\) \{[\s\S]*?txn\.delete\('sync_outbox'/);
-  assert.match(app, /if \(entityType == 'notes' && operation == 'delete'\)/);
+  const enqueue = app.split('Future<void> enqueueSyncOperation(')[1].split('Future<List<Map<String, Object?>>> pendingSyncOperations')[0];
+  assert.match(enqueue, /txn\.delete\('sync_outbox'/);
+  assert.doesNotMatch(enqueue, /if \(entityType == 'notes'\)/);
+  assert.match(app, /final keepLocal = operation == 'delete'/);
 });
 
 test('Worker cloud backups include the same note entities as device sync', () => {

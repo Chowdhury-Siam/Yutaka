@@ -295,13 +295,58 @@ class YutakaSyncApi {
     }
   }
 
-  Future<Map<String, dynamic>> push({required String accessToken, required List<Map<String, dynamic>> operations}) {
-    return _post('/v1/sync/push', {'operations': operations}, accessToken: accessToken);
+  Future<Map<String, dynamic>> push({required String accessToken, required List<Map<String, dynamic>> operations}) async {
+    final response = await _post('/v1/sync/push', {'operations': operations}, accessToken: accessToken);
+    final accepted = response['accepted'];
+    final conflicts = response['conflicts'];
+    if (accepted is! List || conflicts is! List) _invalidSyncResponse();
+    final attempted = {for (final operation in operations) operation['operationId']: operation};
+    final received = <Object?>{};
+    for (final item in accepted) {
+      if (item is! Map || !attempted.containsKey(item['operationId']) ||
+          !received.add(item['operationId']) || !_syncInteger(item['version'], minimum: 1)) {
+        _invalidSyncResponse();
+      }
+    }
+    for (final item in conflicts) {
+      if (item is! Map || !attempted.containsKey(item['operationId']) ||
+          !received.add(item['operationId']) || !_syncInteger(item['serverVersion']) ||
+          item['entityType'] != attempted[item['operationId']]?['entityType'] ||
+          item['entityId'] != attempted[item['operationId']]?['entityId']) {
+        _invalidSyncResponse();
+      }
+    }
+    if (received.length != attempted.length) _invalidSyncResponse();
+    return response;
   }
 
-  Future<Map<String, dynamic>> pull({required String accessToken, required int cursor, int limit = 100}) {
-    return _get('/v1/sync/pull', accessToken: accessToken, query: {'cursor': '$cursor', 'limit': '$limit'});
+  Future<Map<String, dynamic>> pull({required String accessToken, required int cursor, int limit = 100}) async {
+    final response = await _get('/v1/sync/pull', accessToken: accessToken, query: {'cursor': '$cursor', 'limit': '$limit'});
+    final changes = response['changes'];
+    final nextCursor = response['cursor'];
+    if (changes is! List || !_syncInteger(nextCursor, minimum: cursor) || response['hasMore'] is! bool) {
+      _invalidSyncResponse();
+    }
+    var lastSequence = cursor;
+    for (final change in changes) {
+      if (change is! Map || !_syncInteger(change['sequence'], minimum: lastSequence + 1) ||
+          !_syncInteger(change['version']) || change['entityType'] is! String || change['entityId'] is! String ||
+          (change['operation'] != 'upsert' && change['operation'] != 'delete') ||
+          (change['operation'] == 'upsert' && change['payload'] is! Map)) {
+        _invalidSyncResponse();
+      }
+      lastSequence = (change['sequence'] as num).toInt();
+    }
+    if (nextCursor != lastSequence || (response['hasMore'] == true && changes.isEmpty)) _invalidSyncResponse();
+    return response;
   }
+
+  static bool _syncInteger(Object? value, {int minimum = 0}) =>
+      value is num && value.isFinite && value == value.toInt() && value >= minimum;
+
+  static Never _invalidSyncResponse() => throw const CloudSyncException(
+      'The Worker returned an incomplete or invalid sync response. Pending changes will be retried.',
+      code: 'SYNC_INVALID_RESPONSE');
 
   Future<Map<String, dynamic>> status({required String accessToken}) {
     return _get('/v1/sync/status', accessToken: accessToken);
@@ -780,7 +825,14 @@ class YutakaSyncApi {
   }
 
   SyncAuthSession _sessionFromResponse(Map<String, dynamic> data, String fallbackUsername) {
-    final user = (data['user'] as Map? ?? {}).cast<String, dynamic>();
+    final rawUser = data['user'];
+    if (rawUser is! Map) _invalidSyncResponse();
+    final user = rawUser.cast<String, dynamic>();
+    if (data['accessToken'] is! String || (data['accessToken'] as String).isEmpty ||
+        data['refreshToken'] is! String || (data['refreshToken'] as String).isEmpty ||
+        !_syncInteger(data['accessExpiresAt'], minimum: 1) || user['id'] is! String) {
+      _invalidSyncResponse();
+    }
     return SyncAuthSession(
       accessToken: data['accessToken']?.toString() ?? '',
       refreshToken: data['refreshToken']?.toString() ?? '',

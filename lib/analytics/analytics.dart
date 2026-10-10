@@ -328,7 +328,7 @@ _AnalyticsCore _buildAnalyticsCore(AppController state, AnalyticsRange range) {
   }
 
   final newLoanCount = state.loans.where((loan) => _analyticsDateInside(loan.startDate, range)).length;
-  final repayments = state.loanPayments.where((payment) => _analyticsDateInside(payment.paidOn, range)).toList(growable: false);
+  final repayments = state.loanPayments.where((payment) => !payment.isAddition && _analyticsDateInside(payment.paidOn, range)).toList(growable: false);
 
   return _AnalyticsCore(
     transactions: transactions,

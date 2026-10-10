@@ -192,7 +192,7 @@ class YutakaDatabase {
     final path = p.join(dir, 'yutaka_flutter.db');
     _db = await sql.openDatabase(
       path,
-      version: 15,
+      version: 16,
       onCreate: (database, version) async {
         await _createSchema(database);
         await _seed(database);
@@ -202,12 +202,14 @@ class YutakaDatabase {
         await _ensureTransactionMetadataColumns(database);
         await _ensureSubscriptionColumns(database);
         await _ensurePlannedPurchaseColumns(database);
+        await _ensureLoanPaymentColumns(database);
       },
       onOpen: (database) async {
         await _createSchema(database);
         await _ensureTransactionMetadataColumns(database);
         await _ensureSubscriptionColumns(database);
         await _ensurePlannedPurchaseColumns(database);
+        await _ensureLoanPaymentColumns(database);
       },
     );
     return _db!;
@@ -369,6 +371,7 @@ class YutakaDatabase {
         id TEXT PRIMARY KEY,
         loan_id TEXT NOT NULL,
         amount REAL NOT NULL,
+        is_addition INTEGER NOT NULL DEFAULT 0,
         interest_component REAL NOT NULL DEFAULT 0,
         principal_component REAL NOT NULL DEFAULT 0,
         paid_on INTEGER NOT NULL,
@@ -435,6 +438,15 @@ class YutakaDatabase {
         .toSet();
     if (!columns.contains('reminder_on')) {
       await database.execute('ALTER TABLE planned_purchases ADD COLUMN reminder_on INTEGER');
+    }
+  }
+
+  Future<void> _ensureLoanPaymentColumns(sql.Database database) async {
+    final columns = (await database.rawQuery('PRAGMA table_info(loan_payments)'))
+        .map((row) => row['name']?.toString() ?? '')
+        .toSet();
+    if (!columns.contains('is_addition')) {
+      await database.execute('ALTER TABLE loan_payments ADD COLUMN is_addition INTEGER NOT NULL DEFAULT 0');
     }
   }
 
@@ -1325,46 +1337,51 @@ class YutakaDatabase {
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final id = _uuid.v4();
-    if (entityType == 'notes') {
-      // Keep only the final pending mutation for a note. Otherwise a quick
-      // create/edit/delete before a push sends multiple writes with the same
-      // base version, and the later delete can conflict with its own create.
-      final database = await db;
-      await database.transaction((txn) async {
-        final versions = await txn.query('sync_entity_versions',
-            columns: ['version'],
-            where: 'entity_type = ? AND entity_id = ?',
-            whereArgs: [entityType, entityId],
-            limit: 1);
-        final baseVersion = versions.isEmpty ? 0 : (versions.first['version'] as num? ?? 0).toInt();
-        await txn.delete('sync_outbox',
-            where: 'entity_type = ? AND entity_id = ?',
-            whereArgs: [entityType, entityId]);
-        await txn.insert('sync_outbox', {
-          'id': id,
-          'entity_type': entityType,
-          'entity_id': entityId,
-          'operation': operation,
-          'payload_json': payload == null ? null : jsonEncode(payload),
-          'base_version': baseVersion,
-          'created_at': now,
-        });
+    // Keep the latest pending mutation for every entity, including deletes.
+    // Sending several local edits with the same base creates self-conflicts.
+    final database = await db;
+    await database.transaction((txn) async {
+      final versions = await txn.query('sync_entity_versions',
+          columns: ['version'],
+          where: 'entity_type = ? AND entity_id = ?',
+          whereArgs: [entityType, entityId],
+          limit: 1);
+      final baseVersion = versions.isEmpty ? 0 : (versions.first['version'] as num? ?? 0).toInt();
+      await txn.delete('sync_outbox',
+          where: 'entity_type = ? AND entity_id = ?',
+          whereArgs: [entityType, entityId]);
+      await txn.insert('sync_outbox', {
+        'id': id,
+        'entity_type': entityType,
+        'entity_id': entityId,
+        'operation': operation,
+        'payload_json': payload == null ? null : jsonEncode(payload),
+        'base_version': baseVersion,
+        'created_at': now,
       });
-      return;
-    }
-    await (await db).insert('sync_outbox', {
-      'id': id,
-      'entity_type': entityType,
-      'entity_id': entityId,
-      'operation': operation,
-      'payload_json': payload == null ? null : jsonEncode(payload),
-      'base_version': await localEntityVersion(entityType, entityId),
-      'created_at': now,
     });
   }
 
   Future<List<Map<String, Object?>>> pendingSyncOperations({int limit = 50}) async {
-    return (await db).query('sync_outbox', orderBy: 'created_at ASC', limit: limit);
+    // Older installs can still have multiple queued rows for one entity.
+    // Upload them in order, rebasing the next row after each acknowledgement.
+    return (await db).rawQuery('''
+      SELECT o.* FROM sync_outbox o
+      WHERE NOT EXISTS (
+        SELECT 1 FROM sync_outbox earlier
+        WHERE earlier.entity_type = o.entity_type AND earlier.entity_id = o.entity_id
+          AND (earlier.created_at < o.created_at OR
+               (earlier.created_at = o.created_at AND earlier.rowid < o.rowid))
+      )
+      ORDER BY o.created_at, o.rowid LIMIT ?
+    ''', [limit]);
+  }
+
+  Future<Map<String, Object?>?> latestPendingSyncOperation(String entityType, String entityId) async {
+    final rows = await (await db).query('sync_outbox',
+        where: 'entity_type = ? AND entity_id = ?', whereArgs: [entityType, entityId],
+        orderBy: 'created_at DESC, rowid DESC', limit: 1);
+    return rows.isEmpty ? null : rows.first;
   }
 
   Future<Map<String, Object?>?> syncEntityRow(String entityType, String entityId) async {
@@ -1393,21 +1410,33 @@ class YutakaDatabase {
     return count ?? 0;
   }
 
-  Future<void> markOutboxUploaded(List<String> operationIds, Map<String, int> versionsByOperationId) async {
+  Future<void> markOutboxUploaded(List<String> operationIds, Map<String, int> versionsByOperationId, {
+    List<Map<String, Object?>> attemptedOperations = const [],
+  }) async {
     if (operationIds.isEmpty) return;
     final database = await db;
     await database.transaction((txn) async {
       for (final operationId in operationIds) {
         final rows = await txn.query('sync_outbox', where: 'id = ?', whereArgs: [operationId], limit: 1);
-        if (rows.isEmpty) continue;
-        final row = rows.first;
+        // A user may edit the row while its previous operation is in flight.
+        // Its receipt still advances the replacement's base version.
+        final attempted = attemptedOperations.where((row) => row['id'] == operationId);
+        if (rows.isEmpty && attempted.isEmpty) continue;
+        final row = rows.isEmpty ? attempted.first : rows.first;
         final version = versionsByOperationId[operationId];
         if (version != null) {
+          final current = await txn.query('sync_entity_versions', columns: ['version'],
+              where: 'entity_type = ? AND entity_id = ?', whereArgs: [row['entity_type'], row['entity_id']], limit: 1);
+          final currentVersion = current.isEmpty ? 0 : (current.first['version'] as num? ?? 0).toInt();
           await txn.insert(
             'sync_entity_versions',
-            {'entity_type': row['entity_type'], 'entity_id': row['entity_id'], 'version': version},
+            {'entity_type': row['entity_type'], 'entity_id': row['entity_id'], 'version': math.max(currentVersion, version)},
             conflictAlgorithm: sql.ConflictAlgorithm.replace,
           );
+          await txn.rawUpdate('''
+            UPDATE sync_outbox SET base_version = ?
+            WHERE entity_type = ? AND entity_id = ? AND base_version = ? AND id != ?
+          ''', [version, row['entity_type'], row['entity_id'], row['base_version'], operationId]);
         }
         await txn.delete('sync_outbox', where: 'id = ?', whereArgs: [operationId]);
       }
@@ -1475,10 +1504,51 @@ class YutakaDatabase {
     ''', [now, cutoff]);
   }
 
+  /// Replace a rejected mutation only after the complete server history has
+  /// arrived. The original outbox remains recoverable if the pull/merge fails.
+  Future<bool> reconcileSyncConflict(Map<String, dynamic> candidate, Map<String, dynamic>? remote) async {
+    final entityType = candidate['entityType']?.toString() ?? '';
+    final entityId = candidate['entityId']?.toString() ?? '';
+    if (!syncTables.contains(entityType) || entityId.isEmpty) return false;
+    return (await db).transaction((txn) async {
+      final pending = await txn.query('sync_outbox',
+          where: 'entity_type = ? AND entity_id = ?', whereArgs: [entityType, entityId],
+          orderBy: 'created_at DESC, rowid DESC', limit: 1);
+      if (pending.isEmpty) return false;
+      final latest = pending.first;
+      final operation = latest['operation']?.toString() ?? '';
+      final rawPayload = latest['payload_json']?.toString();
+      final payload = rawPayload == null ? null : (jsonDecode(rawPayload) as Map).cast<String, Object?>();
+      final remotePayload = (remote?['payload'] as Map? ?? const {}).cast<String, Object?>();
+      final serverVersion = (remote?['version'] as num? ?? candidate['serverVersion'] as num? ?? 0).toInt();
+      final hasUnattemptedLocalMutation = latest['id'] != candidate['operationId'];
+      final remoteDeleted = remote?['operation'] == 'delete';
+      final keepLocal = operation == 'delete'
+          ? !remoteDeleted
+          : hasUnattemptedLocalMutation || serverVersion == 0 || remote == null ||
+              (payload != null && (remoteDeleted
+                  ? entityType != 'notes' && _syncRowTimestamp(payload) > _syncChangeTimestamp(remote!)
+                  : _syncRowTimestamp(payload) > _syncRowTimestamp(remotePayload)));
+
+      await txn.insert('sync_entity_versions',
+          {'entity_type': entityType, 'entity_id': entityId, 'version': serverVersion},
+          conflictAlgorithm: sql.ConflictAlgorithm.replace);
+      await txn.delete('sync_outbox', where: 'entity_type = ? AND entity_id = ?', whereArgs: [entityType, entityId]);
+      if (!keepLocal) return false;
+      await txn.insert('sync_outbox', {
+        'id': _uuid.v4(), 'entity_type': entityType, 'entity_id': entityId,
+        'operation': operation, 'payload_json': rawPayload, 'base_version': serverVersion,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+      });
+      return true;
+    });
+  }
+
   Future<bool> applyRemoteChanges(
     List<Map<String, dynamic>> changes,
-    Future<void> Function(Map<String, dynamic>) applyPreferences,
-  ) async {
+    Future<void> Function(Map<String, dynamic>) applyPreferences, {
+    Set<String> conflictedOperationIds = const {},
+  }) async {
     // Remote history is merged by stable ID. A cloud delete is authoritative
     // only when there is no newer/pending local copy of that same entity. This
     // prevents a stale tombstone from an older client/update from erasing a
@@ -1497,13 +1567,15 @@ class YutakaDatabase {
 
         final pendingLocalRows = await txn.query(
           'sync_outbox',
-          columns: ['operation'],
+          columns: ['id', 'operation'],
           where: 'entity_type = ? AND entity_id = ?',
           whereArgs: [entityType, entityId],
-          orderBy: 'created_at DESC',
+          orderBy: 'created_at DESC, rowid DESC',
           limit: 1,
         );
-        final hasPendingLocalMutation = pendingLocalRows.isNotEmpty;
+        final hasPendingLocalMutation = pendingLocalRows.isNotEmpty &&
+            !conflictedOperationIds.contains(pendingLocalRows.first['id']);
+        final pendingDelete = pendingLocalRows.isNotEmpty && pendingLocalRows.first['operation'] == 'delete';
 
         if (operation == 'delete') {
           final localRows = await txn.query(
@@ -1517,16 +1589,16 @@ class YutakaDatabase {
           final remoteDeleteTimestamp = _syncChangeTimestamp(change);
           final keepLocal = localRow != null &&
               (hasPendingLocalMutation ||
-                  (localTimestamp > 0 &&
+                  ((entityType != 'notes' || pendingLocalRows.isEmpty) && localTimestamp > 0 &&
                       (remoteDeleteTimestamp <= 0 || localTimestamp > remoteDeleteTimestamp)));
 
-          if (keepLocal) {
+          if (keepLocal && pendingLocalRows.isEmpty) {
             preservedLocalRows['$entityType\u0000$entityId'] = (
               entityType: entityType,
               entityId: entityId,
               payload: localRow,
             );
-          } else {
+          } else if (!keepLocal) {
             if (entityType == 'budgets') {
               await txn.delete('budget_accounts', where: 'budget_id = ?', whereArgs: [entityId]);
               await txn.delete('budget_categories', where: 'budget_id = ?', whereArgs: [entityId]);
@@ -1542,29 +1614,34 @@ class YutakaDatabase {
           }
         } else if (operation == 'upsert') {
           final payload = (change['payload'] as Map? ?? {}).cast<String, Object?>();
+          // The row is absent because of an explicit local delete. Keep that
+          // intent durable until its acknowledgement/rebase; do not resurrect it.
+          if (pendingDelete) {
+            await txn.insert('sync_entity_versions',
+                {'entity_type': entityType, 'entity_id': entityId, 'version': version},
+                conflictAlgorithm: sql.ConflictAlgorithm.replace);
+            continue;
+          }
           var keepLocal = false;
           Map<String, Object?>? localRow;
-          // Join tables do not carry modification timestamps; their composite
-          // IDs already provide set-union semantics, so server upserts are safe.
-          if (entityType != 'budget_accounts' && entityType != 'budget_categories') {
-            final localRows = await txn.query(
-              entityType,
-              where: _whereForEntity(entityType),
-              whereArgs: _whereArgsForEntity(entityType, entityId),
-              limit: 1,
-            );
-            if (localRows.isNotEmpty) {
-              localRow = Map<String, Object?>.from(localRows.first);
-              keepLocal = hasPendingLocalMutation ||
-                  _syncRowTimestamp(localRow) > _syncRowTimestamp(payload);
-            }
+          // Pending join-table edits/deletes need the same protection as rows.
+          final localRows = await txn.query(
+            entityType,
+            where: _whereForEntity(entityType),
+            whereArgs: _whereArgsForEntity(entityType, entityId),
+            limit: 1,
+          );
+          if (localRows.isNotEmpty) {
+            localRow = Map<String, Object?>.from(localRows.first);
+            keepLocal = hasPendingLocalMutation ||
+                _syncRowTimestamp(localRow) > _syncRowTimestamp(payload);
           }
           if (keepLocal && localRow != null) {
-            preservedLocalRows['$entityType\u0000$entityId'] = (
-              entityType: entityType,
-              entityId: entityId,
-              payload: localRow,
-            );
+            if (pendingLocalRows.isEmpty) {
+              preservedLocalRows['$entityType\u0000$entityId'] = (
+                entityType: entityType, entityId: entityId, payload: localRow,
+              );
+            }
           } else if (payload.isNotEmpty) {
             await txn.insert(entityType, payload, conflictAlgorithm: sql.ConflictAlgorithm.replace);
           }
@@ -1576,22 +1653,31 @@ class YutakaDatabase {
           conflictAlgorithm: sql.ConflictAlgorithm.replace,
         );
       }
+      // Queue preserved rows in this same transaction. Enqueuing after it
+      // completes can replace an edit the user made during the intervening gap.
+      for (final local in preservedLocalRows.values) {
+        final versions = await txn.query('sync_entity_versions', columns: ['version'],
+            where: 'entity_type = ? AND entity_id = ?', whereArgs: [local.entityType, local.entityId], limit: 1);
+        await txn.insert('sync_outbox', {
+          'id': _uuid.v4(), 'entity_type': local.entityType, 'entity_id': local.entityId,
+          'operation': 'upsert', 'payload_json': jsonEncode(local.payload),
+          'base_version': versions.isEmpty ? 0 : versions.first['version'],
+          'created_at': DateTime.now().millisecondsSinceEpoch,
+        });
+      }
     });
 
     for (final change in changes) {
       if (change['entityType'] == 'preferences' && change['operation'] == 'upsert') {
-        final payload = (change['payload'] as Map? ?? {}).cast<String, dynamic>();
+        var payload = (change['payload'] as Map? ?? {}).cast<String, dynamic>();
+        final pending = await latestPendingSyncOperation('preferences', 'yutaka');
+        final pendingPayload = pending?['payload_json']?.toString();
+        if (pendingPayload != null) {
+          payload = mergeFinancePreferences(payload, (jsonDecode(pendingPayload) as Map).cast<String, dynamic>(), CategoryMergePlan.empty);
+        }
         await applyPreferences(payload);
         await saveEntityVersion('preferences', 'yutaka', (change['version'] as num? ?? 0).toInt());
       }
-    }
-    for (final local in preservedLocalRows.values) {
-      await enqueueSyncOperation(
-        entityType: local.entityType,
-        entityId: local.entityId,
-        operation: 'upsert',
-        payload: local.payload,
-      );
     }
     return preservedLocalRows.isNotEmpty;
   }
@@ -2231,6 +2317,7 @@ class AppController extends ChangeNotifier {
   String? cloudSyncErrorCode;
   DateTime? cloudSyncLastAt;
   bool _syncInProgress = false;
+  Future<void>? _syncSessionRefresh;
   Completer<void>? _activeCloudSyncCompletion;
   int _cloudSyncCancellationSerial = 0;
   Timer? _cloudSyncDebounce;
@@ -3350,7 +3437,7 @@ class AppController extends ChangeNotifier {
         transactionCount: transactions.length,
         budgetCount: budgets.length,
         loanCount: loans.length,
-        loanPaymentCount: loanPayments.length,
+        loanPaymentCount: loanPayments.where((payment) => !payment.isAddition).length,
         pendingSyncOperations: pendingSyncOperations,
         openSyncConflicts: openSyncConflicts,
         skippedStarterPlaceholdersVisible: skippedStarterPlaceholdersVisible,
@@ -5482,8 +5569,25 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _refreshSyncSession() async {
+    final pending = _syncSessionRefresh;
+    if (pending != null) {
+      await pending;
+      return;
+    }
+    final refresh = _runSyncSessionRefresh();
+    _syncSessionRefresh = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (identical(_syncSessionRefresh, refresh)) _syncSessionRefresh = null;
+    }
+  }
+
+  Future<void> _runSyncSessionRefresh() async {
+    final cancellationSerial = _cloudSyncCancellationSerial;
     if (syncRefreshToken.isEmpty) throw StateError('Sign in to sync first.');
     final session = await YutakaSyncApi(baseUrl: cloudSyncApiBaseUrl).refresh(refreshToken: syncRefreshToken, deviceId: syncDeviceId, username: syncAccountUsername);
+    _throwIfCloudSyncCancelled(cancellationSerial);
     await _saveSyncSession(session);
     _restartCloudLiveConnection();
   }
@@ -5742,7 +5846,7 @@ class AppController extends ChangeNotifier {
   }
 
 
-  Future<void> performMultiDeviceSync({bool silent = false, bool pushLocalChanges = true, bool pullFullCloudCopy = false}) async {
+  Future<void> performMultiDeviceSync({bool silent = false, bool pushLocalChanges = true, bool pullFullCloudCopy = false, bool retryAfterRefresh = true}) async {
     if (_syncAccountTransitionInProgress) return;
     if (!_hasConfiguredSyncTarget()) {
       if (!silent) {
@@ -5802,7 +5906,7 @@ class AppController extends ChangeNotifier {
             acceptedIds.add(operationId);
             versions[operationId] = (item['version'] as num? ?? 0).toInt();
           }
-          await database.markOutboxUploaded(acceptedIds, versions);
+          await database.markOutboxUploaded(acceptedIds, versions, attemptedOperations: pending);
 
           final conflicts = (response['conflicts'] as List? ?? const []).cast<Map>();
           final conflictedIds = <String>[];
@@ -5826,10 +5930,10 @@ class AppController extends ChangeNotifier {
               details: jsonEncode(conflict),
             );
           }
-          await database.markOutboxUploaded(conflictedIds, const {});
-
-          // Avoid spinning forever on a malformed response that neither accepts
-          // nor rejects the attempted operations.
+          // Rejected mutations stay in the durable outbox until the full pull
+          // and reconciliation succeed. Retrying a failed pull must not lose
+          // their payloads or deletion intent.
+          if (conflictedIds.isNotEmpty) break;
           if (acceptedIds.isEmpty && conflictedIds.isEmpty) break;
         }
       }
@@ -5858,11 +5962,7 @@ class AppController extends ChangeNotifier {
       // legacy replace even before the Worker itself has been redeployed.
       final mergedHistory = mergeRemoteSyncHistoryNonDestructively(remoteChanges);
       final mergedRemoteChanges = mergedHistory.changes;
-      final remotelyDeletedNoteIds = mergedRemoteChanges
-          .where((change) => change['entityType'] == 'notes' && change['operation'] == 'delete')
-          .map((change) => change['entityId']?.toString() ?? '')
-          .where((id) => id.isNotEmpty)
-          .toSet();
+
 
       var preservedNewerLocal = false;
       if (mergedRemoteChanges.isNotEmpty) {
@@ -5879,7 +5979,9 @@ class AppController extends ChangeNotifier {
           notifyListeners();
         }
         _throwIfCloudSyncCancelled(cancellationSerial);
-        preservedNewerLocal = await database.applyRemoteChanges(mergedRemoteChanges, mergeRemotePreferences);
+        preservedNewerLocal = await database.applyRemoteChanges(mergedRemoteChanges, mergeRemotePreferences,
+            conflictedOperationIds: conflictedLocalOperations.values
+                .map((operation) => operation['operationId']?.toString() ?? '').toSet());
         _throwIfCloudSyncCancelled(cancellationSerial);
       }
       // Rebase any upload conflicts even if the server returned no additional
@@ -5889,7 +5991,7 @@ class AppController extends ChangeNotifier {
       _throwIfCloudSyncCancelled(cancellationSerial);
       final rebased = await _reapplyNewerConflictedLocalChanges(
         conflictedLocalOperations,
-        remotelyDeletedNoteIds: remotelyDeletedNoteIds,
+        remoteChanges: mergedRemoteChanges,
       );
       if (mergedHistory.recoveredLegacyData) {
         // Heal the server copy as ordinary merge upserts. The legacy reset is
@@ -5917,7 +6019,7 @@ class AppController extends ChangeNotifier {
       if (stillPending) _schedulePendingSyncRetry(immediate: true);
       cloudSyncError = null;
       cloudSyncErrorCode = null;
-      syncStatus = fullPullForMerge ? 'Cloud data merged' : 'Synced';
+      syncStatus = stillPending ? 'Sync pending' : (fullPullForMerge ? 'Cloud data merged' : 'Synced');
       if (mergedRemoteChanges.isNotEmpty || preservedNewerLocal || rebased || repair.hasChanges) {
         await reload(queueSync: false);
       }
@@ -5937,13 +6039,13 @@ class AppController extends ChangeNotifier {
       } else {
         Object failure = error;
         var text = _cleanSyncError(failure);
-        if (text.toLowerCase().contains('expired') || text.toLowerCase().contains('access token')) {
+        if (retryAfterRefresh && (text.toLowerCase().contains('expired') || text.toLowerCase().contains('access token'))) {
           try {
             await _refreshSyncSession();
             _throwIfCloudSyncCancelled(cancellationSerial);
             _syncInProgress = false;
             cloudSyncBusy = false;
-            await performMultiDeviceSync(silent: silent, pushLocalChanges: pushLocalChanges, pullFullCloudCopy: pullFullCloudCopy);
+            await performMultiDeviceSync(silent: silent, pushLocalChanges: pushLocalChanges, pullFullCloudCopy: pullFullCloudCopy, retryAfterRefresh: false);
             return;
           } catch (refreshError) {
             if (cancellationSerial != _cloudSyncCancellationSerial) {
@@ -6054,83 +6156,35 @@ class AppController extends ChangeNotifier {
 
   Future<bool> _reapplyNewerConflictedLocalChanges(
     Map<String, Map<String, dynamic>> conflicts, {
-    Set<String> remotelyDeletedNoteIds = const {},
+    List<Map<String, dynamic>> remoteChanges = const [],
   }) async {
+    final remoteByEntity = <String, Map<String, dynamic>>{
+      for (final change in remoteChanges) '${change['entityType']}\u0000${change['entityId']}': change,
+    };
     var queued = false;
     for (final candidate in conflicts.values) {
       final entityType = candidate['entityType']?.toString() ?? '';
       final entityId = candidate['entityId']?.toString() ?? '';
-      final operation = candidate['operation']?.toString() ?? '';
-      final serverVersion = (candidate['serverVersion'] as num? ?? 0).toInt();
-      if (entityType.isEmpty || entityId.isEmpty) continue;
-
-      if (entityType == 'notes' && operation == 'delete') {
-        // If the server accepted an earlier note edit before this deletion,
-        // retry the explicit local delete against the newly pulled version.
-        // A deletion already present on the server needs no retry.
-        if (remotelyDeletedNoteIds.contains(entityId)) continue;
-        await database.deleteNote(entityId);
-        await database.saveEntityVersion('notes', entityId, serverVersion);
-        await database.enqueueDelete('notes', entityId);
-        queued = true;
-        continue;
-      }
-      if (operation != 'upsert') continue;
-
-      final rawPayload = candidate['payload'];
-      if (rawPayload is! Map) continue;
-      final payload = rawPayload.cast<String, Object?>();
-
+      final remote = remoteByEntity['$entityType\u0000$entityId'];
       if (entityType == 'preferences') {
+        // Read the latest pending preference edit, which may have changed
+        // while the network request was in flight.
+        final pending = await database.latestPendingSyncOperation(entityType, entityId);
+        if (pending == null) continue;
+        final rawPayload = pending['payload_json']?.toString();
+        if (rawPayload == null) continue;
+        final payload = (jsonDecode(rawPayload) as Map).cast<String, dynamic>();
         final current = await exportPreferences();
-        final merged = mergeFinancePreferences(current, payload.cast<String, dynamic>(), CategoryMergePlan.empty);
-        await importPreferences(merged);
-        await database.saveEntityVersion(entityType, entityId, serverVersion);
+        await importPreferences(mergeFinancePreferences(current, payload, CategoryMergePlan.empty));
+        final version = (remote?['version'] as num? ?? candidate['serverVersion'] as num? ?? 0).toInt();
+        await database.saveEntityVersion(entityType, entityId, version);
         await database.enqueuePreferences(await exportPreferences());
         queued = true;
-        continue;
+      } else {
+        queued = await database.reconcileSyncConflict(candidate, remote) || queued;
       }
-      if (!YutakaDatabase.syncTables.contains(entityType)) continue;
-      // A stale legacy copy must not resurrect a note that another device
-      // explicitly deleted while this device was offline.
-      if (entityType == 'notes' && serverVersion > 0 && remotelyDeletedNoteIds.contains(entityId)) continue;
-
-      final currentRow = await database.syncEntityRow(entityType, entityId);
-      final localTimestamp = _mergeRowTimestamp(payload);
-      final remoteTimestamp = currentRow == null ? -1 : _mergeRowTimestamp(currentRow);
-      // serverVersion == 0 means the selected backend/account does not have
-      // this entity at all. That is common after switching from Default to a
-      // fresh Self-hosted Worker while local version metadata still referred to
-      // the previous backend. Rebase to version 0 and upload the local row even
-      // when its timestamp matches the row already present in the local DB.
-      final shouldKeepLocal = serverVersion == 0 || currentRow == null || localTimestamp > remoteTimestamp;
-      if (!shouldKeepLocal) continue;
-
-      await database.upsertSyncEntityRow(entityType, payload);
-      await database.saveEntityVersion(entityType, entityId, serverVersion);
-      await database.enqueueSyncOperation(
-        entityType: entityType,
-        entityId: entityId,
-        operation: 'upsert',
-        payload: payload,
-      );
-      queued = true;
     }
     return queued;
-  }
-
-  int _mergeRowTimestamp(Map<String, Object?> row) {
-    for (final key in const ['updated_on', 'created_on']) {
-      final value = row[key];
-      if (value is num) return value.toInt();
-      if (value is String) {
-        final number = int.tryParse(value);
-        if (number != null) return number;
-        final date = DateTime.tryParse(value);
-        if (date != null) return date.millisecondsSinceEpoch;
-      }
-    }
-    return 0;
   }
 
   Map<String, dynamic> _operationFromOutboxRow(Map<String, Object?> row) {
@@ -18507,7 +18561,9 @@ class _TransactionEditorState extends State<TransactionEditor> {
                             Text('Loan', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
                             const SizedBox(height: 2),
                             Text(
-                              widget.transaction?.linkedEntityType == 'loan_payments' ? 'Loan repayment' : 'Loan disbursal',
+                              widget.transaction?.linkedEntityType == 'loan_payments'
+                                  ? (state.loanPayments.any((payment) => payment.id == widget.transaction?.linkedEntityId && payment.isAddition) ? 'Loan addition' : 'Loan repayment')
+                                  : 'Loan disbursal',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSleekMuted, fontWeight: FontWeight.w700),
                             ),
                           ],

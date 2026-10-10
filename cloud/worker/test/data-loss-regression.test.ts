@@ -71,6 +71,7 @@ test('legacy destructive replace is blocked and pre-reset finance history is rec
     ['loan_contacts', 'contact-preserve', { id: 'contact-preserve', name: 'Upgrade Contact' }],
     ['loans', 'loan-preserve', { id: 'loan-preserve', principal: 1200, direction: 'lent' }],
     ['loan_payments', 'payment-preserve', { id: 'payment-preserve', loan_id: 'loan-preserve', amount: 200 }],
+    ['loan_payments', 'addition-preserve', { id: 'addition-preserve', loan_id: 'loan-preserve', amount: 500, is_addition: 1 }],
   ] as const;
   await db.batch([
     ...sentinels.map(([entityType, entityId, payload], index) => ({

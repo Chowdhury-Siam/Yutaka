@@ -2510,7 +2510,7 @@ async function buildScheduledAnalyticsPdf(
     }).length;
     const repayments = snapshot.database.loan_payments.filter(row => {
       const value = rowTimestamp(row, 'paid_on');
-      return value != null && scheduledRangeContains(range, value);
+      return Number(row.is_addition ?? 0) !== 1 && value != null && scheduledRangeContains(range, value);
     });
     const repaymentTotal = repayments.reduce((sum, row) => sum + rowNumber(row, 'amount'), 0);
 
@@ -3700,17 +3700,55 @@ export async function refresh(request: Request, env: Env, db: Client): Promise<R
   if (!refreshToken) throw new HttpError(401, 'Missing refresh token.');
 
   const tokenHash = await sha256(refreshToken);
-  const row = (await db.execute({
-    sql: `SELECT rt.id, rt.user_id, u.username, u.session_version
-          FROM refresh_tokens rt
-          JOIN users u ON u.id = rt.user_id
-          WHERE rt.token_hash = ? AND rt.device_id = ? AND rt.revoked_at IS NULL AND rt.expires_at > ?`,
-    args: [tokenHash, deviceId, Date.now()],
-  })).rows[0];
-  if (!row) throw new HttpError(401, 'Refresh token is invalid or expired.');
+  const transaction = await syncWriteTransaction(db);
+  try {
+    const now = Date.now();
+    const row = (await transaction.execute({
+      sql: `SELECT rt.id, rt.user_id, rt.revoked_at, rt.rotated_at, u.username, u.session_version
+            FROM refresh_tokens rt JOIN users u ON u.id = rt.user_id
+            WHERE rt.token_hash = ? AND rt.device_id = ? AND rt.expires_at > ?`,
+      args: [tokenHash, deviceId, now],
+    })).rows[0];
+    if (!row) throw new HttpError(401, 'Refresh token is invalid or expired.');
 
-  await db.execute({ sql: 'UPDATE refresh_tokens SET revoked_at = ?, rotated_at = ? WHERE id = ?', args: [Date.now(), Date.now(), String(row.id)] });
-  return issueTokens(env, db, { userId: String(row.user_id), username: String(row.username), deviceId, sessionVersion: Number(row.session_version) });
+    // Derive the same replacement on a retry without storing a bearer token.
+    // Rotation and issuance commit together; a lost response can replay only
+    // for two minutes, and only while that replacement remains active.
+    const replacement = await signDetached(env.JWT_SECRET,
+      `yutaka-refresh-rotation:${String(row.id)}:${Number(row.session_version)}:${deviceId}`);
+    const replacementHash = await sha256(replacement);
+    let refreshExpiresAt: number;
+    if (row.revoked_at == null) {
+      refreshExpiresAt = now + numberEnv(env.REFRESH_TOKEN_TTL_SECONDS, 2592000) * 1000;
+      await transaction.execute({
+        sql: `INSERT INTO refresh_tokens(id, user_id, token_hash, device_id, expires_at, created_at)
+              VALUES (?, ?, ?, ?, ?, ?)`,
+        args: [crypto.randomUUID(), String(row.user_id), replacementHash, deviceId, refreshExpiresAt, now],
+      });
+      await transaction.execute({
+        sql: 'UPDATE refresh_tokens SET revoked_at = ?, rotated_at = ? WHERE id = ?',
+        args: [now, now, String(row.id)],
+      });
+    } else {
+      const rotatedAt = Number(row.rotated_at ?? 0);
+      if (!rotatedAt || Number(row.revoked_at) !== rotatedAt || now - rotatedAt > 120000) {
+        throw new HttpError(401, 'Refresh token is invalid or expired.');
+      }
+      const existing = (await transaction.execute({
+        sql: `SELECT expires_at FROM refresh_tokens
+              WHERE user_id = ? AND device_id = ? AND token_hash = ? AND revoked_at IS NULL AND expires_at > ?`,
+        args: [String(row.user_id), deviceId, replacementHash, now],
+      })).rows[0];
+      if (!existing) throw new HttpError(401, 'Refresh token is invalid or expired.');
+      refreshExpiresAt = Number(existing.expires_at);
+    }
+    await transaction.commit();
+    return authSessionResponse(env, {
+      userId: String(row.user_id), username: String(row.username), deviceId, sessionVersion: Number(row.session_version),
+    }, replacement, refreshExpiresAt);
+  } finally {
+    transaction.close();
+  }
 }
 
 async function logout(request: Request, db: Client, auth: AuthContext): Promise<Response> {
@@ -3718,7 +3756,7 @@ async function logout(request: Request, db: Client, auth: AuthContext): Promise<
   const refreshToken = String(body.refreshToken ?? '');
   if (refreshToken) {
     await db.execute({
-      sql: 'UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND token_hash = ?',
+      sql: 'UPDATE refresh_tokens SET revoked_at = ?, rotated_at = NULL WHERE user_id = ? AND token_hash = ?',
       args: [Date.now(), auth.userId, await sha256(refreshToken)],
     });
   }
@@ -4112,6 +4150,21 @@ async function recoverLegacyResetData(db: Client, userId: string): Promise<numbe
   }
 }
 
+async function syncWriteTransaction(db: Client) {
+  // Retry only acquisition of the write lock. No mutation has run yet, so a
+  // brief overlap between devices cannot replay a partially executed write.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await db.transaction('write');
+    } catch (error) {
+      if (!/SQLITE_(BUSY|LOCKED)\b/.test(databaseErrorMessage(error))) throw error;
+      if (attempt >= 4) throw new HttpError(503, 'Sync database is busy. Retry shortly.', 'SYNC_DATABASE_BUSY');
+      await db.reconnect();
+      await new Promise(resolve => setTimeout(resolve, 25 * 2 ** attempt));
+    }
+  }
+}
+
 async function pushWithOperations(db: Client, auth: AuthContext, rawOperations: unknown, maxBatch: number): Promise<Response> {
   if (!Array.isArray(rawOperations)) throw new HttpError(400, 'operations must be an array.');
   if (rawOperations.length > maxBatch) throw new HttpError(413, `Batch limit is ${maxBatch} operations.`);
@@ -4119,14 +4172,20 @@ async function pushWithOperations(db: Client, auth: AuthContext, rawOperations: 
   const deduplicated = new Map<string, SyncOperation>();
   for (const raw of rawOperations) {
     const op = validateOperation(raw);
-    if (!deduplicated.has(op.operationId)) deduplicated.set(op.operationId, op);
+    const previous = deduplicated.get(op.operationId);
+    if (previous && (previous.entityType !== op.entityType || previous.entityId !== op.entityId ||
+        previous.operation !== op.operation || previous.baseVersion !== op.baseVersion ||
+        JSON.stringify(previous.payload) !== JSON.stringify(op.payload))) {
+      throw new HttpError(400, 'An operationId cannot identify different mutations.');
+    }
+    if (!previous) deduplicated.set(op.operationId, op);
   }
   const operations = [...deduplicated.values()];
   if (operations.length === 0) return json({ ok: true, accepted: [], conflicts: [] });
 
   const accepted: Array<{ operationId: string; sequence: number; version: number }> = [];
   const conflicts: Array<{ operationId: string; entityType: string; entityId: string; serverVersion: number }> = [];
-  const transaction = await db.transaction('write');
+  const transaction = await syncWriteTransaction(db);
 
   try {
     // Resolve retries in one query. Joining back to sync_changes gives the exact
@@ -4152,10 +4211,16 @@ async function pushWithOperations(db: Client, auth: AuthContext, rawOperations: 
     );
 
     const pending: SyncOperation[] = [];
+    const failed: SyncOperation[] = [];
     for (const op of operations) {
       const processed = processedById.get(op.operationId);
-      if (processed) {
+      if (processed && processed.version > 0) {
         accepted.push({ operationId: op.operationId, sequence: processed.sequence, version: processed.version });
+      } else if (processed) {
+        // Legacy cleanup may leave a receipt whose change no longer exists.
+        // Do not acknowledge version 0 or insert a duplicate receipt: let the
+        // client reconcile the current entity and retry with a fresh ID.
+        failed.push(op);
       } else {
         pending.push(op);
       }
@@ -4206,7 +4271,7 @@ async function pushWithOperations(db: Client, auth: AuthContext, rawOperations: 
       })));
 
       const succeeded = prepared.filter((_, index) => casResults[index].rowsAffected === 1);
-      const failed = prepared.filter((_, index) => casResults[index].rowsAffected !== 1);
+      failed.push(...prepared.filter((_, index) => casResults[index].rowsAffected !== 1).map(item => item.op));
 
       if (succeeded.length > 0) {
         // Append all accepted changes in one batch and use RETURNING so the
@@ -4251,27 +4316,27 @@ async function pushWithOperations(db: Client, auth: AuthContext, rawOperations: 
         }
       }
 
-      if (failed.length > 0) {
-        const conditions = failed.map(() => '(entity_type = ? AND entity_id = ?)').join(' OR ');
-        const versionRows = (await transaction.execute({
-          sql: `SELECT entity_type, entity_id, version FROM sync_entities
-                WHERE user_id = ? AND (${conditions})`,
-          args: [auth.userId, ...failed.flatMap(item => [item.op.entityType, item.op.entityId])],
-        })).rows;
-        const versions = new Map<string, number>(
-          versionRows.map(row => [
-            `${String(row.entity_type)}\u0000${String(row.entity_id)}`,
-            Number(row.version),
-          ]),
-        );
-        for (const item of failed) {
-          conflicts.push({
-            operationId: item.op.operationId,
-            entityType: item.op.entityType,
-            entityId: item.op.entityId,
-            serverVersion: versions.get(`${item.op.entityType}\u0000${item.op.entityId}`) ?? 0,
-          });
-        }
+    }
+    if (failed.length > 0) {
+      const conditions = failed.map(() => '(entity_type = ? AND entity_id = ?)').join(' OR ');
+      const versionRows = (await transaction.execute({
+        sql: `SELECT entity_type, entity_id, version FROM sync_entities
+              WHERE user_id = ? AND (${conditions})`,
+        args: [auth.userId, ...failed.flatMap(op => [op.entityType, op.entityId])],
+      })).rows;
+      const versions = new Map<string, number>(
+        versionRows.map(row => [
+          `${String(row.entity_type)}\u0000${String(row.entity_id)}`,
+          Number(row.version),
+        ]),
+      );
+      for (const op of failed) {
+        conflicts.push({
+          operationId: op.operationId,
+          entityType: op.entityType,
+          entityId: op.entityId,
+          serverVersion: versions.get(`${op.entityType}\u0000${op.entityId}`) ?? 0,
+        });
       }
     }
 
@@ -4283,9 +4348,13 @@ async function pushWithOperations(db: Client, auth: AuthContext, rawOperations: 
 }
 
 async function pull(url: URL, env: Env, db: Client, auth: AuthContext): Promise<Response> {
+  const cursor = Number(url.searchParams.get('cursor') ?? '0');
+  const requestedLimit = Number(url.searchParams.get('limit') ?? '100');
+  if (!Number.isSafeInteger(cursor) || cursor < 0 || !Number.isSafeInteger(requestedLimit) || requestedLimit < 1) {
+    throw new HttpError(400, 'cursor and limit must be valid non-negative/positive integers.');
+  }
+  const limit = Math.min(requestedLimit, Math.max(1, Math.floor(numberEnv(env.MAX_SYNC_BATCH_SIZE, 100))));
   await recoverLegacyResetData(db, auth.userId);
-  const cursor = Math.max(0, Number(url.searchParams.get('cursor') ?? '0') || 0);
-  const limit = Math.min(Math.max(1, Number(url.searchParams.get('limit') ?? '100') || 100), numberEnv(env.MAX_SYNC_BATCH_SIZE, 100));
   const rows = (await db.execute({
     sql: `SELECT sequence, entity_type, entity_id, operation, version, payload_json, device_id, operation_id, changed_at
           FROM sync_changes
@@ -4325,9 +4394,7 @@ async function maxSequence(db: Client, auth: AuthContext): Promise<number> {
 
 async function issueTokens(env: Env, db: Client, auth: AuthContext, recoveryKey?: string): Promise<Response> {
   const now = Date.now();
-  const accessExpiresAt = now + numberEnv(env.ACCESS_TOKEN_TTL_SECONDS, 900) * 1000;
   const refreshExpiresAt = now + numberEnv(env.REFRESH_TOKEN_TTL_SECONDS, 2592000) * 1000;
-  const accessToken = await signToken(env.JWT_SECRET, { sub: auth.userId, username: auth.username, deviceId: auth.deviceId, ver: auth.sessionVersion ?? 0, exp: Math.floor(accessExpiresAt / 1000) });
   const refreshToken = crypto.randomUUID() + '.' + crypto.randomUUID();
   const inserted = await db.execute({
     sql: `INSERT INTO refresh_tokens(id, user_id, token_hash, device_id, expires_at, created_at)
@@ -4335,6 +4402,12 @@ async function issueTokens(env: Env, db: Client, auth: AuthContext, recoveryKey?
     args: [crypto.randomUUID(), auth.userId, await sha256(refreshToken), auth.deviceId, refreshExpiresAt, now, auth.userId, auth.sessionVersion ?? 0],
   });
   if (!inserted.rowsAffected) throw new HttpError(401, 'Account session was revoked. Sign in again.');
+  return authSessionResponse(env, auth, refreshToken, refreshExpiresAt, recoveryKey);
+}
+
+async function authSessionResponse(env: Env, auth: AuthContext, refreshToken: string, refreshExpiresAt: number, recoveryKey?: string): Promise<Response> {
+  const accessExpiresAt = Date.now() + numberEnv(env.ACCESS_TOKEN_TTL_SECONDS, 900) * 1000;
+  const accessToken = await signToken(env.JWT_SECRET, { sub: auth.userId, username: auth.username, deviceId: auth.deviceId, ver: auth.sessionVersion ?? 0, exp: Math.floor(accessExpiresAt / 1000) });
   return privateJson({
     accessToken,
     refreshToken,
@@ -4444,17 +4517,27 @@ async function sha256(value: string): Promise<string> {
 }
 
 function validateOperation(raw: unknown): SyncOperation {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new HttpError(400, 'Invalid sync operation.');
   const value = raw as Record<string, unknown>;
   const operation = String(value.operation ?? '');
   if (operation !== 'upsert' && operation !== 'delete') throw new HttpError(400, 'Invalid operation.');
+  const baseVersion = Number(value.baseVersion ?? 0);
+  const clientUpdatedAt = Number(value.clientUpdatedAt ?? Date.now());
+  if (!Number.isSafeInteger(baseVersion) || baseVersion < 0 || baseVersion >= Number.MAX_SAFE_INTEGER) {
+    throw new HttpError(400, 'Invalid baseVersion.');
+  }
+  if (!Number.isSafeInteger(clientUpdatedAt) || clientUpdatedAt < 0) throw new HttpError(400, 'Invalid clientUpdatedAt.');
+  if (operation === 'upsert' && (!value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload))) {
+    throw new HttpError(400, 'Upsert payload must be an object.');
+  }
   return {
     operationId: normalizeId(value.operationId, 'operationId'),
     entityType: normalizeEntityType(value.entityType),
     entityId: normalizeId(value.entityId, 'entityId'),
     operation,
     payload: value.payload,
-    baseVersion: Number(value.baseVersion ?? 0),
-    clientUpdatedAt: Number(value.clientUpdatedAt ?? Date.now()),
+    baseVersion,
+    clientUpdatedAt,
   };
 }
 
@@ -4494,7 +4577,9 @@ function cleanText(value: unknown, max: number): string {
 
 async function readJson(request: Request): Promise<Record<string, unknown>> {
   try {
-    return await request.json() as Record<string, unknown>;
+    const value = await request.json();
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a JSON object.');
+    return value as Record<string, unknown>;
   } catch {
     throw new HttpError(400, 'Invalid JSON body.');
   }

@@ -239,7 +239,7 @@ class _LoanTile extends StatelessWidget {
     final accent = computation.overdue ? kSleekWarning : loan.isLent ? kSleekIncome : kSleekExpense;
     final tile = Semantics(
       button: true,
-      label: '${contact?.name ?? 'Unknown person'}, ${loan.isLent ? 'lent' : 'borrowed'} ${state.format(loan.principal)}, ${state.format(loanNonNegative(computation.outstanding))} outstanding, $dueLabel',
+      label: '${contact?.name ?? 'Unknown person'}, ${loan.isLent ? 'lent' : 'borrowed'} ${state.format(computation.principal)}, ${state.format(loanNonNegative(computation.outstanding))} outstanding, $dueLabel',
       child: MotionTouchFeedback(
         scale: .985,
         child: ExpressiveCard(
@@ -335,7 +335,10 @@ class LoanDetailScreen extends StatelessWidget {
     }
     final contact = state.loanContactOf(loan.contactId);
     final computation = state.computationFor(loan.id);
-    final payments = state.paymentsForLoan(loan.id).toList()..sort((a, b) => a.paidOn.compareTo(b.paidOn));
+    final payments = state.paymentsForLoan(loan.id).toList()..sort((a, b) {
+      final byDate = a.paidOn.compareTo(b.paidOn);
+      return byDate != 0 ? byDate : a.createdOn.compareTo(b.createdOn);
+    });
     final remaining = loanNonNegative(computation.outstanding);
     return PageScaffold(
       title: contact?.name ?? 'Loan details',
@@ -422,6 +425,12 @@ class LoanDetailScreen extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: loan.status != LoanStatus.writtenOff ? () => showLoanPaymentSheet(context, loan: loan, isAddition: true) : null,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Add money'),
+          ),
+          const SizedBox(height: 8),
           FilledButton.icon(
             onPressed: loan.status == LoanStatus.active ? () => showLoanPaymentSheet(context, loan: loan) : null,
             icon: const Icon(Icons.add_card_rounded),
@@ -434,7 +443,7 @@ class LoanDetailScreen extends StatelessWidget {
             return _LoanTimelineEntry(
               date: loan.startDate,
               title: loan.isLent ? 'Money lent' : 'Money borrowed',
-              body: payments.isEmpty
+              body: payments.every((payment) => payment.isAddition)
                   ? '${state.format(loan.principal)} · No repayments recorded yet'
                   : '${state.format(loan.principal)} principal',
               icon: loan.isLent ? Icons.north_east_rounded : Icons.south_west_rounded,
@@ -444,16 +453,25 @@ class LoanDetailScreen extends StatelessWidget {
             );
           }
           final payment = payments[index - 1];
+          // ponytail: recompute dated splits in O(n²) for this timeline; cache them
+          // in one pass if very large loan histories become a measured problem.
+          final split = payment.isAddition
+              ? const LoanPaymentSplit(interest: 0, principal: 0)
+              : allocateLoanPayment(loan, payments.take(index - 1), payment.amount, payment.paidOn);
           return _LoanTimelineEntry(
             date: payment.paidOn,
-            title: 'Payment ${state.format(payment.amount)}',
-            body: '${state.format(payment.interestComponent)} interest + ${state.format(payment.principalComponent)} principal',
-            icon: Icons.payments_rounded,
-            color: kSleekAccent,
+            title: payment.isAddition
+                ? '${loan.isLent ? 'More money lent' : 'More money borrowed'} · ${state.format(payment.amount)}'
+                : 'Payment ${state.format(payment.amount)}',
+            body: payment.isAddition
+                ? (payment.note.isEmpty ? 'Added to principal' : payment.note)
+                : '${state.format(split.interest)} interest + ${state.format(split.principal)} principal',
+            icon: payment.isAddition ? (loan.isLent ? Icons.north_east_rounded : Icons.south_west_rounded) : Icons.payments_rounded,
+            color: payment.isAddition ? (loan.isLent ? kSleekIncome : kSleekExpense) : kSleekAccent,
             isFirst: false,
             isLast: index == payments.length,
             trailing: IconButton(
-              tooltip: 'Delete payment',
+              tooltip: payment.isAddition ? 'Delete addition' : 'Delete payment',
               icon: const Icon(Icons.delete_outline_rounded),
               onPressed: () => _confirmDeleteLoanPayment(context, state, payment),
             ),
@@ -611,7 +629,7 @@ Future<void> _confirmDeleteLoanPayment(BuildContext context, AppController state
     context: context,
     builder: (dialogContext) => StatefulBuilder(
       builder: (context, setModalState) => AlertDialog(
-        title: const Text('Delete payment?'),
+        title: Text(payment.isAddition ? 'Delete addition?' : 'Delete payment?'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -166,6 +166,12 @@ extension LoanControllerActions on AppController {
     if (loan.interestRate < 0 || loan.interestRate > 1000) throw StateError('Enter a valid annual interest rate.');
     if (!_loanContactsById.containsKey(loan.contactId)) throw StateError('Select a person.');
     final previous = loanOf(loan.id);
+    if (paymentsForLoan(loan.id).any((payment) => payment.paidOn.isBefore(loan.startDate))) {
+      throw StateError('Start date cannot be after an existing payment or addition.');
+    }
+    if (previous != null && previous.direction != loan.direction && paymentsForLoan(loan.id).isNotEmpty) {
+      throw StateError('Create a separate loan to change its direction after payments or additions.');
+    }
     var saved = loan.copyWith(principal: roundLoanMoney(loan.principal), updatedOn: DateTime.now());
 
     if (previous == null && recordDisbursal) {
@@ -221,10 +227,22 @@ extension LoanControllerActions on AppController {
   Future<void> addLoanPayment(LoanPayment payment, {bool recordInAccount = false, String? accountId}) async {
     final loan = loanOf(payment.loanId);
     if (loan == null) throw StateError('The selected record no longer exists.');
+    if (payment.isAddition && loan.status == LoanStatus.writtenOff) {
+      throw StateError('Reopen this loan before adding money.');
+    }
     if (!payment.amount.isFinite || payment.amount <= 0) throw StateError('Enter a valid payment amount.');
-    if (payment.paidOn.isBefore(loan.startDate)) throw StateError('Payment date cannot be before the start date.');
-    if (payment.paidOn.isAfter(DateTime.now().add(const Duration(minutes: 1)))) throw StateError('Payment date cannot be in the future.');
-    final split = allocateLoanPayment(loan, paymentsForLoan(loan.id), payment.amount, payment.paidOn);
+    if (roundLoanMoney(payment.amount) <= 0) {
+      throw StateError('Enter an amount of at least 0.01.');
+    }
+    if (payment.paidOn.isBefore(loan.startDate)) {
+      throw StateError('Date cannot be before the start date.');
+    }
+    if (payment.paidOn.isAfter(DateTime.now().add(const Duration(minutes: 1)))) {
+      throw StateError('Date cannot be in the future.');
+    }
+    final split = payment.isAddition
+        ? LoanPaymentSplit(interest: 0, principal: roundLoanMoney(payment.amount))
+        : allocateLoanPayment(loan, paymentsForLoan(loan.id), payment.amount, payment.paidOn);
     var saved = payment.copyWith(
       amount: roundLoanMoney(payment.amount),
       interestComponent: split.interest,
@@ -234,11 +252,14 @@ extension LoanControllerActions on AppController {
 
     if (recordInAccount) {
       if (accountId == null || accountId.isEmpty) throw StateError('Select an account.');
-      final category = await _loanCategory(loan.direction, payment: true);
+      if (accountOf(accountId) == null) {
+        throw StateError('The selected account no longer exists.');
+      }
+      final category = await _loanCategory(loan.direction, payment: !payment.isAddition);
       final transaction = _loanMoneyTransaction(
         id: _uuid.v4(),
         direction: loan.direction,
-        payment: true,
+        payment: !payment.isAddition,
         amount: saved.amount,
         title: category.name,
         accountId: accountId,
@@ -246,7 +267,7 @@ extension LoanControllerActions on AppController {
         linkedEntityType: 'loan_payments',
         linkedEntityId: saved.id,
         occurredOn: saved.paidOn,
-        notes: saved.note.isEmpty ? 'Recorded repayment' : saved.note,
+        notes: saved.note.isEmpty ? (saved.isAddition ? 'Additional money ${loan.isLent ? 'lent' : 'borrowed'}' : 'Recorded repayment') : saved.note,
       );
       saved = await loanRepository.addPaymentWithTransaction(saved, transaction);
       await database.enqueueTableRow('transactions', transaction.id);
@@ -257,9 +278,12 @@ extension LoanControllerActions on AppController {
 
     await database.enqueueTableRow('loan_payments', saved.id);
     final updatedComputation = computeLoan(loan, [...paymentsForLoan(loan.id), saved]);
-    if (updatedComputation.settled && loan.status == LoanStatus.active) {
-      await loanRepository.setLoanStatus(loan.id, LoanStatus.closed, DateTime.now());
-      await database.enqueueTableRow('loans', loan.id);
+    if (loan.status != LoanStatus.writtenOff) {
+      final targetStatus = updatedComputation.settled ? LoanStatus.closed : LoanStatus.active;
+      if (loan.status != targetStatus) {
+        await loanRepository.setLoanStatus(loan.id, targetStatus, targetStatus == LoanStatus.closed ? DateTime.now() : null);
+        await database.enqueueTableRow('loans', loan.id);
+      }
     }
     await reload(queueSync: true);
   }
@@ -272,6 +296,9 @@ extension LoanControllerActions on AppController {
     }
     if (!candidate.amount.isFinite || candidate.amount <= 0) {
       throw StateError('Enter a valid amount.');
+    }
+    if (roundLoanMoney(candidate.amount) <= 0) {
+      throw StateError('Enter an amount of at least 0.01.');
     }
     if (candidate.fromAccountId.isEmpty) {
       throw StateError('Select an account.');
@@ -290,7 +317,9 @@ extension LoanControllerActions on AppController {
       }
 
       final otherPayments = paymentsForLoan(loan.id).where((item) => item.id != payment.id).toList();
-      final split = allocateLoanPayment(loan, otherPayments, candidate.amount, candidate.createdOn);
+      final split = payment.isAddition
+          ? LoanPaymentSplit(interest: 0, principal: roundLoanMoney(candidate.amount))
+          : allocateLoanPayment(loan, otherPayments, candidate.amount, candidate.createdOn);
       final updatedPayment = payment.copyWith(
         amount: roundLoanMoney(candidate.amount),
         interestComponent: split.interest,
@@ -299,11 +328,11 @@ extension LoanControllerActions on AppController {
         note: candidate.notes.trim(),
         updatedOn: DateTime.now(),
       );
-      final category = await _loanCategory(loan.direction, payment: true);
+      final category = await _loanCategory(loan.direction, payment: !payment.isAddition);
       final canonical = _loanMoneyTransaction(
         id: previous.id,
         direction: loan.direction,
-        payment: true,
+        payment: !payment.isAddition,
         amount: updatedPayment.amount,
         title: category.name,
         accountId: candidate.fromAccountId,
@@ -311,7 +340,7 @@ extension LoanControllerActions on AppController {
         linkedEntityType: 'loan_payments',
         linkedEntityId: updatedPayment.id,
         occurredOn: updatedPayment.paidOn,
-        notes: updatedPayment.note.isEmpty ? 'Recorded repayment' : updatedPayment.note,
+        notes: updatedPayment.note.isEmpty ? (updatedPayment.isAddition ? 'Additional money ${loan.isLent ? 'lent' : 'borrowed'}' : 'Recorded repayment') : updatedPayment.note,
       );
       await loanRepository.updatePaymentWithTransaction(updatedPayment, previous, canonical);
       await database.enqueueTableRow('loan_payments', updatedPayment.id);
@@ -427,9 +456,12 @@ extension LoanControllerActions on AppController {
     final loan = loanOf(payment.loanId);
     if (loan != null) {
       final remaining = paymentsForLoan(loan.id).where((item) => item.id != id);
-      if (!computeLoan(loan, remaining).settled && loan.status == LoanStatus.closed) {
-        await loanRepository.setLoanStatus(loan.id, LoanStatus.active, null);
-        await database.enqueueTableRow('loans', loan.id);
+      if (loan.status != LoanStatus.writtenOff) {
+        final targetStatus = computeLoan(loan, remaining).settled ? LoanStatus.closed : LoanStatus.active;
+        if (loan.status != targetStatus) {
+          await loanRepository.setLoanStatus(loan.id, targetStatus, targetStatus == LoanStatus.closed ? DateTime.now() : null);
+          await database.enqueueTableRow('loans', loan.id);
+        }
       }
     }
     await reload(queueSync: true);

@@ -150,6 +150,12 @@ Profile photos, animated GIFs, and short profile videos use the authenticated `/
 
 `MAX_SYNC_BATCH_SIZE` defaults to `100`.
 
+Pending edits are coalesced per entity. Legacy queues send one operation per entity in each batch, and receipts advance the remaining local mutation's base version. A conflict stays in the SQLite outbox until the complete pull succeeds and the local/server versions are reconciled. Failed pulls therefore retain both edit payloads and explicit deletions. Push responses must account for every submitted operation, and pull pages must advance monotonically before the app saves its cursor.
+
+Refresh-token rotation and replacement issuance share one transaction. If a refresh response is lost, the original token can retrieve the same replacement for up to two minutes while that replacement remains active. Logout, password/session revocation, expiry, and subsequent rotation prevent replay. Overlapping client refreshes share one request; expired-token retry is bounded.
+
+Only write-lock acquisition is retried on transient SQLite busy/locked errors, with a fresh connection and a short bounded delay. Entity writes, change-log appends, and operation receipts remain atomic; partially executed mutations are not replayed automatically. Run `npm test` and `npm run typecheck` before deploying. See `../../SYNC_RELIABILITY_REVIEW.md` for the review and validation results.
+
 ## Cloud `.yutakabackup`
 
 `wrangler.self-hosted.toml` runs one five-minute scheduler that checks automatic Analytics reports plus Telegram and Google Drive `.yutakabackup` schedules. Credentials are configured only from the authenticated Yutaka app.

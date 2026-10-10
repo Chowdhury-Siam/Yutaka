@@ -38,7 +38,7 @@ void main() {
     expect(migration, contains("'entity_type': 'notes'"));
     expect(migration, contains("await txn.insert('sync_state'"));
     expect(source, contains('await database.enqueueLegacyNotesForCloudSync('));
-    expect(source, contains('remotelyDeletedNoteIds.contains(entityId)'));
+    expect(source, contains("entityType != 'notes' && _syncRowTimestamp(payload)"));
   });
 
   test('rich-text note payloads are preserved during a two-device merge', () {

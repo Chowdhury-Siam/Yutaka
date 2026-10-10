@@ -701,17 +701,51 @@ jobs:
       - name: List Android artifacts
         run: ls -lh artifacts
 
-      - name: Verify APK signatures
+      - name: Sign and verify final APK certificates
         if: matrix.package == 'apk'
+        shell: bash
         run: |
+          set -euo pipefail
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           if [ ! -x "$APKSIGNER" ]; then
-            echo "::warning::apksigner was not found at $APKSIGNER; skipping signature verification."
-            exit 0
+            echo "::error::Required apksigner was not found at $APKSIGNER."
+            exit 1
           fi
-          for apk in artifacts/*.apk; do
-            echo "Verifying $apk"
-            "$APKSIGNER" verify --print-certs "$apk"
+
+          signing_dir="$(mktemp -d "$RUNNER_TEMP/yutaka-apk-signing.XXXXXX")"
+          trap 'rm -rf "$signing_dir"' EXIT
+          keytool -exportcert -keystore "$ANDROID_KEYSTORE_FILE" \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS" \
+            -file "$signing_dir/release.der"
+          expected_digest="$(sha256sum "$signing_dir/release.der" | cut -d ' ' -f 1)"
+
+          shopt -s nullglob
+          apks=(artifacts/*.apk)
+          if [ ${#apks[@]} -ne 1 ]; then
+            echo "::error::Expected exactly one APK for this Android matrix job."
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            # Use the same permanent key, including a JAR certificate for
+            # installers that inspect META-INF rather than modern signing blocks.
+            "$APKSIGNER" sign --ks "$ANDROID_KEYSTORE_FILE" \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+              --v1-signing-enabled true --v2-signing-enabled true \
+              --v3-signing-enabled true --v4-signing-enabled false \
+              --out "$signing_dir/signed.apk" "$apk"
+            report="$("$APKSIGNER" verify --verbose --print-certs "$signing_dir/signed.apk")"
+            printf '%s\n' "$report"
+            grep -Fq 'Verified using v2 scheme (APK Signature Scheme v2): true' <<< "$report"
+            # API 23 verification forces validation of the embedded v1 certificate,
+            # even if a dependency raised the final manifest's minimum SDK.
+            "$APKSIGNER" verify --min-sdk-version 23 --max-sdk-version 23 "$signing_dir/signed.apk"
+            actual_digest="$(awk -F ': ' '/^Signer #[0-9]+ certificate SHA-256 digest:/ {print tolower($2)}' <<< "$report")"
+            if [ "$actual_digest" != "$expected_digest" ]; then
+              echo "::error::APK certificate does not match the permanent release key."
+              exit 1
+            fi
+            mv "$signing_dir/signed.apk" "$apk"
           done
 
       - name: Upload direct APK

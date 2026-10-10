@@ -57,6 +57,7 @@ LoanComputation computeLoan(Loan loan, Iterable<LoanPayment> payments, {DateTime
 
   final annualRate = loanNonNegative(loan.interestRate) / 100;
   var cursor = loan.startDate;
+  var totalPrincipal = loanNonNegative(loan.principal);
   var principalBalance = loanNonNegative(loan.principal);
   var interestAccrued = loan.interestType != LoanInterestType.none && loan.interestPeriod == LoanInterestPeriod.flat
       ? loan.principal * annualRate
@@ -73,10 +74,10 @@ LoanComputation computeLoan(Loan loan, Iterable<LoanPayment> payments, {DateTime
       return;
     }
     if (loan.interestType == LoanInterestType.simple) {
-      interestAccrued += loan.principal * annualRate * days / 365;
+      interestAccrued += totalPrincipal * annualRate * days / 365;
     } else {
       final growth = _compoundGrowth(loan.interestPeriod, annualRate, days);
-      interestAccrued += principalBalance * (growth - 1);
+      interestAccrued += (principalBalance + loanNonNegative(interestAccrued - interestPaid)) * (growth - 1);
     }
     cursor = clamped;
   }
@@ -85,6 +86,14 @@ LoanComputation computeLoan(Loan loan, Iterable<LoanPayment> payments, {DateTime
     final paymentDate = payment.paidOn.isBefore(loan.startDate) ? loan.startDate : payment.paidOn;
     accrueUntil(paymentDate);
     final amount = loanNonNegative(payment.amount);
+    if (payment.isAddition) {
+      totalPrincipal += amount;
+      principalBalance = loanNonNegative(totalPrincipal - principalPaid);
+      if (loan.interestType != LoanInterestType.none && loan.interestPeriod == LoanInterestPeriod.flat) {
+        interestAccrued += amount * annualRate;
+      }
+      continue;
+    }
     final interestOutstanding = loanNonNegative(interestAccrued - interestPaid);
     final interestPart = math.min(amount, interestOutstanding).toDouble();
     final principalPart = loanNonNegative(amount - interestPart);
@@ -95,17 +104,17 @@ LoanComputation computeLoan(Loan loan, Iterable<LoanPayment> payments, {DateTime
   }
   accrueUntil(effectiveAt);
 
-  final totalDue = loan.principal + interestAccrued;
+  final totalDue = totalPrincipal + interestAccrued;
   final outstanding = totalDue - totalPaid;
   final overpaid = loanNonNegative(-outstanding);
   final settled = outstanding <= 0.005;
   final progress = totalDue <= 0 ? 0.0 : (totalPaid / totalDue).clamp(0.0, 1.0).toDouble();
   final overdueDays = loan.dueDate == null || !requestedAt.isAfter(loan.dueDate!) ? 0 : _calendarDays(loan.dueDate!, requestedAt);
   final overdue = loan.status == LoanStatus.active && overdueDays > 0 && !settled;
-  final emi = loanEmiAmount(loan);
+  final emi = loanEmiAmount(loan.copyWith(principal: totalPrincipal));
 
   return LoanComputation(
-    principal: roundLoanMoney(loan.principal),
+    principal: roundLoanMoney(totalPrincipal),
     interestAccrued: roundLoanMoney(interestAccrued),
     totalDue: roundLoanMoney(totalDue),
     totalPaid: roundLoanMoney(totalPaid),
@@ -118,7 +127,7 @@ LoanComputation computeLoan(Loan loan, Iterable<LoanPayment> payments, {DateTime
     daysOverdue: overdue ? overdueDays : 0,
     overdue: overdue,
     emiAmount: emi,
-    paymentsCount: eligible.length,
+    paymentsCount: eligible.where((payment) => !payment.isAddition).length,
     installmentsPaid: emi == null || emi <= 0 ? 0 : (totalPaid / emi).floor(),
     computedAt: requestedAt,
   );

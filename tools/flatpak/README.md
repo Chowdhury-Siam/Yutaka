@@ -39,7 +39,7 @@ install the downloaded file (replace the filename for ARM64 or a later release):
 
 ```bash
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user ./Yutaka-v1.0.1279-linux-x64.flatpak
+flatpak install --user ./Yutaka-v1.0.1281-linux-x64.flatpak
 flatpak run io.github.chowdhury_siam.Yutaka
 ```
 

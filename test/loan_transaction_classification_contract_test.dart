@@ -12,7 +12,8 @@ void main() {
     expect(app, contains("final isLoanTransaction = widget.transaction?.isLoanTransaction ?? false;"));
     expect(app, contains("SleekPillOption(value: type, label: 'Loan'"));
     expect(app, contains("Text('Loan', style:"));
-    expect(app, contains("widget.transaction?.linkedEntityType == 'loan_payments' ? 'Loan repayment' : 'Loan disbursal'"));
+    expect(app, contains("? 'Loan addition' : 'Loan repayment'"));
+    expect(app, contains(": 'Loan disbursal'"));
     expect(app, contains('else if (isLoanTransaction) {'));
     expect(app, contains('await state.updateLinkedLoanTransaction(tx);'));
   });

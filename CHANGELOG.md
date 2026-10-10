@@ -1,3 +1,29 @@
+## 1.0.1281+325
+
+- Preserve rejected operations until a complete cloud pull and reconciliation succeed, including explicit deletes for every entity type.
+- Coalesce pending mutations by entity, serialize legacy same-entity queues, and advance newer edits when an in-flight operation is acknowledged.
+- Reconcile against the actual pulled server version, preserve edits made during a sync, and queue preserved local rows atomically with their merge.
+- Validate push receipts and advancing pull pages before acknowledging operations or saving a cursor; keep pending status visible until the queue settles.
+- Rotate refresh tokens atomically with a bounded, deterministic replay of a lost response; serialize client refreshes and limit expired-token retry recursion.
+- Retry transient database write-lock acquisition, reject malformed sync input before writing, and add server/database/network regression coverage.
+- Preserve loan additions and permanent APK signing; bump synchronized release metadata to `1.0.1281+325`.
+
+## 1.0.1280+324
+
+- Add an Add money action to lent and borrowed loan details, with amount, date/time, optional note and optional account recording.
+- Keep every addition as a separate dated event in the existing loan ledger, preserve initial principal/repayments, and safely migrate existing databases with additions disabled for legacy payment rows.
+- Include additions in principal, remaining balance and dated interest calculations; exclude additions from paid/progress/repayment totals.
+- Preserve additions through cloud sync and backup merges, support linked transaction edits/deletes, and reopen settled loans when additional money remains due.
+- Add loan calculation, persistence, account movement, legacy migration and cloud recovery regression coverage.
+- Preserve the APK signing workflow fix and bump synchronized app/release metadata to `1.0.1280+324`.
+
+## Android APK certificate CI maintenance (1.0.1279+323)
+
+- Explicitly sign final direct APKs with v1, v2 and v3 using the permanent release key before artifact upload.
+- Require signature verification, including the embedded JAR certificate, and match the final APK certificate to the configured keystore; never skip verification when signing tools are missing.
+- Add regression coverage for signing/verification failures, certificate mismatch and missing artifacts/tools.
+- Keep app and Worker versions unchanged for this release-workflow-only fix.
+
 ## Standalone Flatpak CI packaging (1.0.1279+323)
 
 - Package the existing Linux release bundle as standalone x64 and ARM64 Flatpaks using native GitHub runners and the GNOME runtime.
