@@ -1,6 +1,7 @@
 """Check Linux JNI exclusion and Flatpak launch/storage verification."""
 
 import os
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -10,6 +11,89 @@ import unittest
 
 
 class FlatpakPackagingTest(unittest.TestCase):
+    def test_lean_installer_selects_only_runtime_graphics_and_existing_scope(self):
+        script = Path(__file__).resolve().parents[2] / 'tools/flatpak/install-lean.sh'
+        # Exercise fresh installs, both architectures, existing system/user apps,
+        # and a user app reusing a system runtime. Commands are recorded as argv.
+        for arch, drivers, existing, runtime_scope, gl_branch in [
+            ('x86_64', 'default\nhost\n', '', '--user', '26.08'),
+            ('aarch64', 'default\nhost\n', '--user', '--user', '26.08'),
+            ('x86_64', 'nvidia-595-104-02\ndefault\nhost\n', '--system', '--system', '26.08'),
+            ('x86_64', 'default\n', '--user', '--system', '27.08'),
+        ]:
+            with self.subTest(arch=arch, existing=existing, runtime_scope=runtime_scope), \
+                    tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                bundle = root / 'Yutaka bundle.flatpak'
+                bundle.touch()
+                log = root / 'calls.jsonl'
+                flatpak = root / 'flatpak'
+                flatpak.write_text('#!' + sys.executable + '\n' + textwrap.dedent('''
+                    import json, os, sys
+                    args = sys.argv[1:]
+                    with open(os.environ['COMMAND_LOG'], 'a') as output:
+                        output.write(json.dumps(args) + '\\n')
+                    if args[0] == '--gl-drivers':
+                        print(os.environ['DRIVERS'], end='')
+                    elif args[0] == 'info':
+                        if '--show-runtime' in args:
+                            print('org.gnome.Platform/' + os.environ['ARCH'] + '/51')
+                        elif '--show-metadata' in args:
+                            if args[1] != os.environ['RUNTIME_SCOPE']:
+                                sys.exit(1)
+                            print('[Extension other]\\nversion=99.99\\n'
+                                  '[Extension org.freedesktop.Platform.GL]\\nversions=' +
+                                  os.environ['GL_BRANCH'] + ';' + os.environ['GL_BRANCH'] + '-extra;1.4;')
+                        elif '--show-origin' in args:
+                            print('runtime-source')
+                        else:
+                            sys.exit(0 if args[1] == os.environ['EXISTING'] else 1)
+                    elif args[0] == 'install':
+                        sys.exit(int(os.environ.get('INSTALL_STATUS', '0')))
+                    elif args[0] == 'remote-add':
+                        sys.exit(0)
+                    else:
+                        sys.exit(1)
+                '''))
+                flatpak.chmod(0o755)
+                env = dict(os.environ, PATH=f'{root}{os.pathsep}{os.environ["PATH"]}',
+                           COMMAND_LOG=str(log), ARCH=arch, DRIVERS=drivers, EXISTING=existing,
+                           RUNTIME_SCOPE=runtime_scope, GL_BRANCH=gl_branch)
+                result = subprocess.run(['bash', str(script), str(bundle)], env=env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                calls = [json.loads(line) for line in log.read_text().splitlines()]
+                installs = [call for call in calls if call[0] == 'install']
+                self.assertEqual(len(installs), 2)
+                self.assertEqual(installs[0][1], existing or '--user')
+                self.assertEqual(installs[0][-1], str(bundle))
+                self.assertEqual(installs[1][1], runtime_scope)
+                for call in installs:
+                    self.assertIn('--no-related', call)
+                    self.assertNotIn('--no-deps', call)
+                expected = [f'runtime/org.freedesktop.Platform.GL.default/{arch}/{gl_branch}']
+                if 'nvidia-' in drivers:
+                    expected.append(f'runtime/org.freedesktop.Platform.GL.nvidia-595-104-02/{arch}/1.4')
+                self.assertEqual(installs[1][installs[1].index('runtime-source') + 1:], expected)
+                # An installation failure must propagate and stop all later downloads.
+                log.unlink()
+                env['INSTALL_STATUS'] = '7'
+                result = subprocess.run(['bash', str(script), str(bundle)], env=env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 7)
+                failed_calls = [json.loads(line) for line in log.read_text().splitlines()]
+                self.assertNotIn('--gl-drivers', [call[0] for call in failed_calls])
+                self.assertEqual(sum(call[0] == 'install' for call in failed_calls), 1)
+                # Missing/unsupported metadata must not guess a graphics ABI.
+                log.unlink()
+                env.update(INSTALL_STATUS='0', GL_BRANCH='unsupported')
+                result = subprocess.run(['bash', str(script), str(bundle)], env=env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('Could not determine', result.stderr)
+                calls = [json.loads(line) for line in log.read_text().splitlines()]
+                self.assertEqual(sum(call[0] == 'install' for call in calls), 1)
+
     def test_linux_disables_optional_jni_even_with_cached_jdk(self):
         workflow = (Path(__file__).resolve().parents[2] /
                     '.github/workflows/build-linux.yml').read_text()

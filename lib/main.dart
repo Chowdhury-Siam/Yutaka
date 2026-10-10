@@ -1527,7 +1527,7 @@ class YutakaDatabase {
           ? !remoteDeleted
           : hasUnattemptedLocalMutation || serverVersion == 0 || remote == null ||
               (payload != null && (remoteDeleted
-                  ? entityType != 'notes' && _syncRowTimestamp(payload) > _syncChangeTimestamp(remote!)
+                  ? entityType != 'notes' && _syncRowTimestamp(payload) > _syncChangeTimestamp(remote)
                   : _syncRowTimestamp(payload) > _syncRowTimestamp(remotePayload)));
 
       await txn.insert('sync_entity_versions',

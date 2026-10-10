@@ -3,7 +3,7 @@
 set -euo pipefail
 bundle="$1"
 app_id=io.github.chowdhury_siam.Yutaka
-flatpak install --user --noninteractive --assumeyes "$bundle"
+flatpak install --user --noninteractive --assumeyes --no-related "$bundle"
 
 flatpak run --command=sh "$app_id" -ec '
   test -f /.flatpak-info

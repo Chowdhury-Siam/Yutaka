@@ -30,21 +30,53 @@ the strict Flatpak dependency check intact.
 
 Successful runs provide `yutaka-linux-flatpak-x64` and
 `yutaka-linux-flatpak-arm64` artifacts containing
-`Yutaka-v<version>-linux-<arch>.flatpak`. The existing stable-release publisher
+`Yutaka-v<version>-linux-<arch>.flatpak` and its matching
+`Yutaka-v<version>-linux-<arch>-Install-flatpak.sh`. The existing stable-release publisher
 includes both after all platform workflows succeed for the same source commit.
 Build or verification failures block publication and retain launch failure logs.
 
-On a Linux computer with Flatpak installed, enable the runtime repository and
-install the downloaded file (replace the filename for ARM64 or a later release):
+On a Linux computer with Flatpak installed, download both release files and run
+the lean installer (replace the filenames for ARM64 or a later release):
 
 ```bash
-flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user ./Yutaka-v1.0.1281-linux-x64.flatpak
+bash ./Yutaka-v1.0.1282-linux-x64-Install-flatpak.sh ./Yutaka-v1.0.1282-linux-x64.flatpak
 flatpak run io.github.chowdhury_siam.Yutaka
 ```
 
+The installer uses Flatpak's `--no-related` option while retaining dependency
+verification. It installs the required GNOME runtime, the runtime's standard
+Mesa graphics extension, and only the NVIDIA graphics version reported active
+by `flatpak --gl-drivers`, when present. It skips VAAPI video drivers, extra
+video codecs, the extra Mesa codec branch and runtime language packs. The
+Freedesktop graphics branch comes from the installed runtime's metadata; it
+is not the GNOME version. Graphics libraries remain necessary for rendering.
+
+Existing user/system installations retain their scope automatically; a fresh
+install defaults to per-user. Pass `--user` or `--system` before the bundle
+filename to choose explicitly. Existing shared packages and application data
+are left in place. A user app can reuse an existing system runtime.
+
+The plain `flatpak install FILE.flatpak` command and normal graphical Flatpak
+updates can still fetch the runtime's optional extensions. The app manifest
+cannot disable those runtime-owned downloads. Use the lean installer for
+subsequent bundle updates, and `flatpak update --no-related` for runtime/graphics
+security updates without adding more extensions. Do not use `--no-deps` or
+remove graphics support. To include all media/language extensions instead,
+use the standard installation command:
+
+```bash
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user ./Yutaka-v1.0.1282-linux-x64.flatpak
+```
+
+CI tests the lean installation in fresh user/system Flatpak directories, checks
+that the skipped extensions were not installed, then runs the library/startup
+and private database checks. It does not remove the SDK/build image's packages.
+AppImage and Setup.run remain available for users who want to avoid a separate
+Flatpak runtime download entirely.
+
 These standalone files do not provide an automatic update repository. To update,
-download the newer matching-architecture Flatpak and install it over the existing
+download the newer matching-architecture Flatpak and run the installer over the existing
 one. Keep the same app ID so private finance data remains in the same directory.
 
 ## Authorship and Flathub policy

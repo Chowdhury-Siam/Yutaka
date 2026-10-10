@@ -716,7 +716,7 @@ Yutaka has separate Android distribution flavors so Play Store installs never us
 flutter build appbundle --release --flavor play \
   --no-tree-shake-icons \
   --dart-define=YUTAKA_ANDROID_DISTRIBUTION=play \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1281
+  --dart-define=YUTAKA_APP_VERSION=1.0.1282
 ```
 
 **Direct/GitHub APK** — keeps the GitHub APK updater for users who install outside Google Play:
@@ -725,7 +725,7 @@ flutter build appbundle --release --flavor play \
 flutter build apk --release --flavor direct \
   --no-tree-shake-icons \
   --dart-define=YUTAKA_ANDROID_DISTRIBUTION=direct \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1281
+  --dart-define=YUTAKA_APP_VERSION=1.0.1282
 ```
 
 After a successful direct Android update, Yutaka requests reopening and shows its update-success popup on launch. Android may block an app from opening itself from the background; when notifications are allowed, a quiet **Open Yutaka** completion notification provides a tap-to-open fallback. Cancelled or failed updates do not reopen the app, and Google Play builds continue using Play’s update flow.
@@ -739,7 +739,7 @@ flutter config --enable-windows-desktop
 flutter create --platforms=windows --project-name yutaka --no-pub .
 flutter pub get
 flutter build windows --release \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1281
+  --dart-define=YUTAKA_APP_VERSION=1.0.1282
 ```
 
 ## 10.5 Linux build
@@ -756,7 +756,7 @@ flutter config --enable-linux-desktop
 flutter create --platforms=linux --project-name yutaka --no-pub .
 flutter pub get
 flutter build linux --release \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1281
+  --dart-define=YUTAKA_APP_VERSION=1.0.1282
 ```
 
 The release workflow builds both **x64** and **ARM64** Linux packages on Ubuntu 22.04. The x64 runner uses the pinned Flutter SDK release directly; the ARM64 runner bootstraps the same pinned Flutter tag from source so it does not depend on missing prebuilt ARM64 SDK archive entries. Each architecture gets:
@@ -765,6 +765,7 @@ The release workflow builds both **x64** and **ARM64** Linux packages on Ubuntu 
 - `Yutaka-v<version>-linux-<arch>.tar.gz` — the raw Flutter portable bundle.
 - `Yutaka-v<version>-linux-<arch>-Setup.run` — the graphical per-user installer, including the AppImage and a terminal installation option.
 - `Yutaka-v<version>-linux-<arch>.flatpak` — the standalone sandboxed package for GitHub distribution, using the GNOME runtime.
+- `Yutaka-v<version>-linux-<arch>-Install-flatpak.sh` — the lean Flatpak installer, which keeps required graphics support and skips optional media/language extensions.
 
 The native GTK installer uses the same custom header, branded sidebar and welcome/progress/completion layout as the other desktop installers. In-app updates prefer the matching architecture’s Setup.run and retain AppImage/archive fallback for older releases. CI compiles the UI with warnings treated as errors and checks installation, busy-close protection, failure/retry and completion under Xvfb, alongside backend upgrade, data-preservation and corruption tests. AppImages are already compressed, so setup packages avoid a second compression pass.
 
@@ -773,6 +774,8 @@ The AppImage is intended for broad compatibility across mainstream **glibc-based
 ### Standalone Flatpak / Flathub preparation
 
 **Actions → Build Linux Releases → Run workflow** builds standalone x64 and ARM64 Flatpaks without a local Linux computer. Download the `yutaka-linux-flatpak-x64` or `yutaka-linux-flatpak-arm64` artifact after success; the stable-release publisher also includes these packages once all platform workflows succeed for the same commit. CI verifies runtime libraries, sandbox launch and private database initialization.
+
+Download the matching `.flatpak` and `-Install-flatpak.sh` files and run the script with the bundle filename to avoid the runtime's automatic VAAPI/codecs/extra Mesa/language downloads. GNOME and active graphics support remain required; ordinary Flatpak installs or updates can still add the optional extensions. AppImage/Setup.run avoids the separate Flatpak runtime download.
 
 See [`tools/flatpak`](tools/flatpak/README.md) for installation and manual package updates. This GitHub package uses an AI-assisted manifest and precompiled upstream bundle; it is not eligible for Flathub submission. Flathub still requires an independently human-authored source-build manifest, completed screenshots/content rating and a tested offline build. The workflow does not publish to Flathub.
 
@@ -785,7 +788,7 @@ flutter config --enable-macos-desktop
 flutter create --platforms=macos --project-name yutaka --org com.yutaka --no-pub .
 flutter pub get
 flutter build macos --release \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1281
+  --dart-define=YUTAKA_APP_VERSION=1.0.1282
 ```
 
 The release workflow builds one **universal macOS package** containing both **Apple Silicon (ARM64)** and **Intel (x64)** slices. GitHub Releases publish `Yutaka-v<version>-macos-universal.pkg` and a matching `.zip` containing `Yutaka.app`. CI runs on GitHub's Apple Silicon `macos-15` runner for faster Xcode/Flutter compilation, bootstraps the pinned Flutter `3.47.4` source tag into a reusable SDK cache, keeps Flutter's universal macOS mode enabled, verifies both architecture slices with `lipo`, and reuses CocoaPods plus incremental macOS build caches between releases. It also applies Yutaka's icon and `com.yutaka.siam` bundle identifier and enables network access plus user-selected file read/write access for sync, import, and backup workflows.

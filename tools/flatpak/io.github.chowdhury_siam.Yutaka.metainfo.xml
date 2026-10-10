@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1282" date="2026-10-11">
+      <description><p>Fix a redundant non-null assertion in sync reconciliation.</p></description>
+    </release>
     <release version="1.0.1281" date="2026-10-10">
       <description><p>Improve cloud sync retries, conflict recovery and session renewal.</p></description>
     </release>

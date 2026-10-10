@@ -1,3 +1,16 @@
+## 1.0.1282+326
+
+- Remove the redundant non-null assertion in sync conflict reconciliation after Dart flow analysis already promotes the remote change.
+- Preserve the existing sync reliability, loan additions, APK signing and lean Flatpak packaging fixes.
+- Bump synchronized app/Android/Worker release metadata to `1.0.1282+326`.
+
+## Lean Flatpak installation maintenance (1.0.1281+325)
+
+- Ship a lean Flatpak installation script with both architecture releases, skipping related media/language packs while keeping runtime dependency verification and standard/active NVIDIA graphics support.
+- Read the graphics ABI from installed runtime metadata and reuse existing user/system installation scope and shared runtimes without changing finance data or globally masking extensions.
+- Verify the lean installation in clean Flatpak directories before dependency/startup/database checks; add installation selection and failure regression coverage.
+- Keep app and Worker versions unchanged for packaging/CI-only changes; ordinary Flatpak installs and updates retain the runtime's normal extension behavior.
+
 ## 1.0.1281+325
 
 - Preserve rejected operations until a complete cloud pull and reconciliation succeed, including explicit deletes for every entity type.

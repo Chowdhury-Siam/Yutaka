@@ -423,6 +423,10 @@ jobs:
           version = re.search(r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+', text, re.M).group(1)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'bundle=artifacts/Yutaka-v{version}-linux-{os.environ["PACKAGE_ARCH"]}.flatpak\n')
+              installer = f'artifacts/Yutaka-v{version}-linux-{os.environ["PACKAGE_ARCH"]}-Install-flatpak.sh'
+              output.write(f'installer={installer}\n')
+          pathlib.Path(installer).write_bytes(pathlib.Path('tools/flatpak/install-lean.sh').read_bytes())
+          pathlib.Path(installer).chmod(0o755)
           PY
 
       - name: Build standalone Flatpak
@@ -439,7 +443,19 @@ jobs:
         shell: bash
         env:
           FLATPAK_BUNDLE: ${{ steps.package.outputs.bundle }}
-        run: bash tools/flatpak/verify.sh "$FLATPAK_BUNDLE"
+        run: |
+          # Test without the builder image's preinstalled runtime extensions.
+          export FLATPAK_USER_DIR="$RUNNER_TEMP/yutaka-flatpak-lean-user"
+          export FLATPAK_SYSTEM_DIR="$RUNNER_TEMP/yutaka-flatpak-lean-system"
+          mkdir -p "$FLATPAK_USER_DIR" "$FLATPAK_SYSTEM_DIR"
+          bash tools/flatpak/install-lean.sh --user "$FLATPAK_BUNDLE"
+          extensions="$(flatpak list --user --runtime --columns=application,branch)"
+          printf '%s\n' "$extensions"
+          if printf '%s\n' "$extensions" | grep -Eq 'VAAPI|codecs-extra|GL.default.*-extra|Platform.Locale'; then
+            echo '::error::Lean installation pulled in optional runtime extensions.'
+            exit 1
+          fi
+          bash tools/flatpak/verify.sh "$FLATPAK_BUNDLE"
 
       - name: Upload Flatpak verification logs
         if: failure()
@@ -453,6 +469,8 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: yutaka-linux-flatpak-${{ matrix.arch }}
-          path: ${{ steps.package.outputs.bundle }}
+          path: |
+            ${{ steps.package.outputs.bundle }}
+            ${{ steps.package.outputs.installer }}
           if-no-files-found: error
           compression-level: 0
