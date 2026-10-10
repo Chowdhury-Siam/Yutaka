@@ -1,3 +1,9 @@
+## Flatpak runtime keyfile maintenance (1.0.1282+326)
+
+- Accept spaces and tabs around `version`/`versions` assignments and graphics branch values; GNOME 51 runtime metadata uses `versions = ...`.
+- Add actual Flathub GNOME 51 metadata for x86_64 and aarch64 as regression fixtures, with source commit references. Verify that these cases fail with the previous parser and pass with the fix.
+- Preserve lean extension selection and keep app and Worker versions unchanged for this packaging-only correction.
+
 ## Flatpak metadata and Windows GUI check maintenance (1.0.1282+326)
 
 - Read the complete GL extension metadata, prefer `versions` over the NVIDIA-only `version=1.4`, and select the standard Mesa branch regardless of metadata key/list order.

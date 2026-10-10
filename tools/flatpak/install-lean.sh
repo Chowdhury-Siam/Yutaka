@@ -44,8 +44,14 @@ while IFS= read -r line; do
   case "$line" in
     '[Extension org.freedesktop.Platform.GL]') in_gl=true ;;
     '['*) in_gl=false ;;
-    versions=*) if "$in_gl"; then gl_versions="${line#*=}"; fi ;;
-    version=*) if "$in_gl"; then gl_version="${line#*=}"; fi ;;
+    *)
+      # Runtime key files can use spaces around '=' (GNOME 51 does).
+      if "$in_gl" && [[ "$line" =~ ^[[:blank:]]*(versions|version)[[:blank:]]*=[[:blank:]]*(.*) ]]; then
+        case "${BASH_REMATCH[1]}" in
+          versions) gl_versions="${BASH_REMATCH[2]}" ;;
+          version) gl_version="${BASH_REMATCH[2]}" ;;
+        esac
+      fi ;;
   esac
 done <<< "$metadata"
 # The singular version can be NVIDIA's 1.4 even when versions lists Mesa too.
@@ -54,9 +60,12 @@ gl_versions="${gl_versions:-$gl_version}"
 IFS=';' read -r -a gl_branches <<< "$gl_versions"
 gl_branch=
 for branch in "${gl_branches[@]}"; do
-  if [[ "$branch" =~ ^[0-9]+\.[0-9]+$ && "$branch" != 1.4 ]]; then
-    gl_branch="$branch"
-    break
+  if [[ "$branch" =~ ^[[:blank:]]*([0-9]+\.[0-9]+)[[:blank:]]*$ ]]; then
+    branch="${BASH_REMATCH[1]}"
+    if [[ "$branch" != 1.4 ]]; then
+      gl_branch="$branch"
+      break
+    fi
   fi
 done
 [[ -n "$gl_branch" ]] || fail \

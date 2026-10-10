@@ -22,6 +22,9 @@ class FlatpakPackagingTest(unittest.TestCase):
             ('aarch64', 'nvidia-595-104-02\ndefault\nhost\n', '--user', '--user', '26.08', 'nvidia-first'),
             ('x86_64', 'default\n', '--user', '--system', '27.08', 'version-first'),
             ('aarch64', 'default\n', '', '--user', '27.08', 'single-version'),
+            ('x86_64', 'nvidia-595-104-02\ndefault\n', '', '--user', '26.08', 'runtime-metadata'),
+            ('aarch64', 'default\n', '', '--user', '26.08', 'runtime-metadata'),
+            ('x86_64', 'default\n', '', '--user', '27.08', 'spaced-keys'),
         ]:
             with self.subTest(arch=arch, existing=existing, runtime_scope=runtime_scope), \
                     tempfile.TemporaryDirectory() as directory:
@@ -43,6 +46,11 @@ class FlatpakPackagingTest(unittest.TestCase):
                         elif '--show-metadata' in args:
                             if args[1] != os.environ['RUNTIME_SCOPE']:
                                 sys.exit(1)
+                            if os.environ['METADATA_FORMAT'] == 'runtime-metadata':
+                                with open(os.environ['RUNTIME_METADATA']) as fixture:
+                                    metadata = fixture.read()
+                                print(metadata.replace('26.08', os.environ['GL_BRANCH']))
+                                sys.exit(0)
                             branch = os.environ['GL_BRANCH']
                             plural = 'versions=' + branch + ';' + branch + '-extra;1.4;'
                             keys = 'version=1.4\\n' + plural
@@ -52,6 +60,8 @@ class FlatpakPackagingTest(unittest.TestCase):
                                 keys = 'version=1.4\\nversions=1.4;' + branch + '-extra;' + branch + ';'
                             elif os.environ['METADATA_FORMAT'] == 'single-version':
                                 keys = 'version=' + branch
+                            elif os.environ['METADATA_FORMAT'] == 'spaced-keys':
+                                keys = '\\tversions \\t= \\t' + branch + ';' + branch + '-extra;1.4;\\n version = 1.4 '
                             print('[Extension other]\\nversion=99.99\\n'
                                   '[Extension org.freedesktop.Platform.GL]\\n' + keys +
                                   '\\n[Extension org.freedesktop.Platform.GL.Debug]\\nversion=99.99')
@@ -70,7 +80,9 @@ class FlatpakPackagingTest(unittest.TestCase):
                 env = dict(os.environ, PATH=f'{root}{os.pathsep}{os.environ["PATH"]}',
                            COMMAND_LOG=str(log), ARCH=arch, DRIVERS=drivers, EXISTING=existing,
                            RUNTIME_SCOPE=runtime_scope, GL_BRANCH=gl_branch,
-                           METADATA_FORMAT=metadata_format)
+                           METADATA_FORMAT=metadata_format,
+                           RUNTIME_METADATA=str(Path(__file__).parent / 'fixtures' /
+                                                f'gnome-platform-51-{arch}.metadata'))
                 result = subprocess.run(['bash', str(script), str(bundle)], env=env,
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
