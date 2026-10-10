@@ -1,3 +1,11 @@
+## 1.0.1283+327
+
+- Upload note deletions immediately after durable local deletion, update the note list directly and avoid reloading unrelated finance tables first.
+- Retain local upload requests made while a sync is busy and run a follow-up pass as soon as it finishes instead of waiting for the five-second retry timer.
+- Keep ordinary edits/autosaves debounced without starting an extra immediate pull for every edit; catch up after a live connection or reconnect to close the subscription gap.
+- Add an HTTP/SQLite regression for deleting a note during a blocked pull, including outbox acknowledgement and preservation of unrelated account data.
+- Synchronize app/Android/Worker release metadata at `1.0.1283+327` and preserve all installer, packaging and sync reliability fixes.
+
 ## Flatpak installed-bundle verification maintenance (1.0.1282+326)
 
 - Verify the existing per-user installation instead of installing the same bundle a second time; retain sandbox dependency, startup and private SQLite checks.

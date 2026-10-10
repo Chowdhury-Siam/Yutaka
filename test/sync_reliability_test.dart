@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -216,6 +217,77 @@ void main() {
     await (await controller.database.db).close();
     database = YutakaDatabase();
     expect((await database.pendingSyncOperations()).single['payload_json'], original['payload_json']);
+  });
+
+  test('a note deleted during an active pull uploads before the retry timer', () async {
+    final controller = AppController();
+    addTearDown(controller.dispose);
+    final note = <String, Object?>{
+      'id': 'latency-note', 'title': 'Delete me', 'body': '',
+      'created_on': 100, 'updated_on': 100,
+    };
+    await controller.database.upsertSyncEntityRow('notes', note);
+    await controller.database.upsertSyncEntityRow('accounts', account(100, 100));
+    controller.notes = [YutakaNote.fromMap(note)];
+    final pullStarted = Completer<void>();
+    final releasePull = Completer<void>();
+    final deletionUploaded = Completer<Map>();
+    var pullCount = 0;
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() async {
+      controller.cloudSyncEnabled = false;
+      if (!releasePull.isCompleted) releasePull.complete();
+      await server.close(force: true);
+    });
+    server.listen((request) async {
+      final body = await utf8.decoder.bind(request).join();
+      request.response.headers.contentType = ContentType.json;
+      if (request.uri.path == '/v1/sync/pull') {
+        pullCount += 1;
+        if (pullCount == 1) {
+          pullStarted.complete();
+          await releasePull.future;
+        }
+        request.response.write('{"changes":[],"cursor":0,"hasMore":false}');
+      } else if (request.uri.path == '/v1/sync/push') {
+        final operations = (jsonDecode(body)['operations'] as List).cast<Map>();
+        final deletion = operations.singleWhere((op) => op['entityId'] == 'latency-note');
+        request.response.write(jsonEncode({'accepted': [for (final op in operations) {
+          'operationId': op['operationId'], 'version': 1,
+        }], 'conflicts': []}));
+        deletionUploaded.complete(deletion);
+      } else if (request.uri.path == '/v1/profile-media/meta') {
+        request.response.write('{"media":null}');
+      } else {
+        // Keep the live channel unavailable so a reconnect notification cannot
+        // accidentally hide the dropped-upload bug this test exercises.
+        request.response.statusCode = 426;
+        request.response.write('{"error":"No WebSocket in this fixture"}');
+      }
+      await request.response.close();
+    });
+    controller.cloudSyncApiBaseUrl = 'http://127.0.0.1:${server.port}';
+    controller.cloudSyncEnabled = true;
+    controller.syncAccessToken = 'access';
+    controller.syncRefreshToken = 'refresh';
+    controller.syncDeviceId = 'device-one';
+    final activeSync = controller.performMultiDeviceSync(silent: true);
+    await pullStarted.future.timeout(const Duration(seconds: 2));
+    await controller.deleteNote('latency-note');
+    expect(controller.notes, isEmpty);
+    expect(deletionUploaded.isCompleted, isFalse);
+    releasePull.complete();
+    await activeSync;
+    final uploaded = await deletionUploaded.future.timeout(const Duration(seconds: 1));
+    expect(uploaded['operation'], 'delete');
+    expect(uploaded['entityType'], 'notes');
+    await Future.doWhile(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      return controller.cloudSyncOperationBusy;
+    }).timeout(const Duration(seconds: 1));
+    expect(await controller.database.pendingSyncOperationCount(), 0);
+    expect(await controller.database.syncEntityRow('notes', 'latency-note'), isNull);
+    expect((await controller.database.syncEntityRow('accounts', 'cash-account'))!['amount'], 100);
   });
 
   test('malformed success responses cannot clear pending operations or stall pagination', () async {

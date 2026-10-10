@@ -22,7 +22,8 @@ void main() {
         .split('Future<void> saveSubscription')[0];
     expect(deleteNote, contains("await database.enqueueDelete('notes', id);"));
     expect(deleteNote.indexOf('enqueueDelete'), lessThan(deleteNote.indexOf('database.deleteNote')));
-    expect(deleteNote, contains('await reload(queueSync: true);'));
+    expect(deleteNote, contains('notes.removeWhere((note) => note.id == id);'));
+    expect(deleteNote, contains('queueCloudSync(immediate: true);'));
   });
 
   test('pre-upgrade notes are queued only once without overwriting tracked notes', () {

@@ -2330,6 +2330,7 @@ class AppController extends ChangeNotifier {
   Duration? _cloudSyncActivePullInterval;
   bool _cloudSyncLiveConnecting = false;
   bool _cloudRealtimePullPending = false;
+  bool _cloudLocalPushPending = false;
   int _cloudSyncLiveReconnectAttempt = 0;
   // Realtime notifications are delivered through the self-hosted Worker's
   // WebSocket hub. Local writes are pushed after a very short debounce; the
@@ -6081,9 +6082,10 @@ class AppController extends ChangeNotifier {
         notifyListeners();
       }
       if (cancellationSerial == _cloudSyncCancellationSerial &&
-          _cloudRealtimePullPending &&
+          (_cloudRealtimePullPending || _cloudLocalPushPending) &&
           _hasConfiguredSyncTarget()) {
         _cloudRealtimePullPending = false;
+        _cloudLocalPushPending = false;
         scheduleMicrotask(() => unawaited(syncCloudChangesIfIdle(force: true)));
       }
     }
@@ -6244,7 +6246,7 @@ class AppController extends ChangeNotifier {
     });
   }
 
-  void _startCloudAutoPull() {
+  void _startCloudAutoPull({bool pullImmediately = true}) {
     if (!_hasConfiguredSyncTarget()) {
       _stopCloudAutoPull();
       return;
@@ -6254,7 +6256,9 @@ class AppController extends ChangeNotifier {
     // commits a change to the Worker.
     _configureCloudFallbackPull(realtimeConnected: _cloudSyncLiveSocket != null);
     _startCloudLiveConnection();
-    unawaited(syncCloudChangesIfIdle(force: true));
+    if (pullImmediately) {
+      unawaited(syncCloudChangesIfIdle(force: true));
+    }
   }
 
   void _stopCloudAutoPull() {
@@ -6263,6 +6267,7 @@ class AppController extends ChangeNotifier {
     _cloudSyncActivePullInterval = null;
     _lastCloudAutoPullAt = null;
     _cloudRealtimePullPending = false;
+    _cloudLocalPushPending = false;
     _stopCloudLiveConnection();
   }
 
@@ -6302,6 +6307,9 @@ class AppController extends ChangeNotifier {
         onError: (_) => _handleCloudLiveClosed(socket),
         cancelOnError: true,
       );
+      // Catch changes committed between the last pull and this subscription,
+      // including after a reconnect, without waiting for the fallback timer.
+      _requestCloudRealtimePull();
     } catch (_) {
       _configureCloudFallbackPull(realtimeConnected: false);
       _scheduleCloudLiveReconnect();
@@ -6317,15 +6325,19 @@ class AppController extends ChangeNotifier {
       if (decoded is! Map || decoded['type'] != 'sync-change') return;
       final sourceDeviceId = decoded['deviceId']?.toString() ?? '';
       if (sourceDeviceId.isNotEmpty && sourceDeviceId == syncDeviceId) return;
-      if (_syncInProgress || cloudSyncBusy || syncAuthBusy) {
-        _cloudRealtimePullPending = true;
-        return;
-      }
-      unawaited(syncCloudChangesIfIdle(force: true));
+      _requestCloudRealtimePull();
     } catch (_) {
       // Ignore malformed/non-sync WebSocket messages; the fallback pull timer
       // still guarantees eventual convergence.
     }
+  }
+
+  void _requestCloudRealtimePull() {
+    if (_syncInProgress || cloudSyncBusy || syncAuthBusy) {
+      _cloudRealtimePullPending = true;
+      return;
+    }
+    unawaited(syncCloudChangesIfIdle(force: true));
   }
 
   void _handleCloudLiveClosed(WebSocket socket) {
@@ -6376,28 +6388,43 @@ class AppController extends ChangeNotifier {
     await syncToCloud(silent: true);
   }
 
-  void queueCloudSync() {
+  void queueCloudSync({bool immediate = false}) {
     if (!_hasConfiguredSyncTarget()) return;
     if (newSyncAccountAwaitingSetupChoice) return;
-    _startCloudAutoPull();
+    _startCloudAutoPull(pullImmediately: false);
     unawaited(_setCloudSyncPending(true));
     _schedulePendingSyncRetry();
     _cloudSyncDebounce?.cancel();
-    _cloudSyncDebounce = Timer(_cloudSyncPushDebounce, () {
-      unawaited(syncToCloud(silent: true));
-    });
+    _cloudSyncDebounce = null;
+    if (immediate) {
+      _flushQueuedCloudSync();
+    } else {
+      _cloudSyncDebounce = Timer(_cloudSyncPushDebounce, _flushQueuedCloudSync);
+    }
   }
 
   void queueNoteAutosaveCloudSync() {
     if (!_hasConfiguredSyncTarget()) return;
     if (newSyncAccountAwaitingSetupChoice) return;
-    _startCloudAutoPull();
+    _startCloudAutoPull(pullImmediately: false);
     unawaited(_setCloudSyncPending(true));
     _schedulePendingSyncRetry();
     _cloudSyncDebounce?.cancel();
-    _cloudSyncDebounce = Timer(const Duration(milliseconds: 450), () {
-      unawaited(syncToCloud(silent: true));
-    });
+    _cloudSyncDebounce = Timer(const Duration(milliseconds: 450), _flushQueuedCloudSync);
+  }
+
+  void _flushQueuedCloudSync() {
+    _cloudSyncDebounce = null;
+    if (!_hasConfiguredSyncTarget() || _syncAccountTransitionInProgress || newSyncAccountAwaitingSetupChoice) {
+      return;
+    }
+    // A write arriving during a pull/media request must run immediately after
+    // that sync finishes instead of being dropped until the five-second retry.
+    if (_syncInProgress || cloudSyncBusy) {
+      _cloudLocalPushPending = true;
+      return;
+    }
+    unawaited(syncToCloud(silent: true));
   }
 
   String _cleanSyncError(Object error) {
@@ -7478,7 +7505,7 @@ class AppController extends ChangeNotifier {
   Future<void> deleteAutosavedNote(String id) async {
     await database.deleteAutosavedNote(id);
     notes.removeWhere((note) => note.id == id);
-    queueNoteAutosaveCloudSync();
+    queueCloudSync(immediate: true);
   }
 
   void publishAutosavedNotes() => notifyListeners();
@@ -7494,7 +7521,9 @@ class AppController extends ChangeNotifier {
   Future<void> deleteNote(String id) async {
     await database.enqueueDelete('notes', id);
     await database.deleteNote(id);
-    await reload(queueSync: true);
+    notes.removeWhere((note) => note.id == id);
+    notifyListeners();
+    queueCloudSync(immediate: true);
   }
 
   Future<void> saveSubscription(RecurringSubscription item) async {
