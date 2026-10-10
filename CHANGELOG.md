@@ -1,3 +1,9 @@
+## Release contract test maintenance (1.0.1282+326)
+
+- Update the Telegram backup contract to check the shared conflict reconciler used by the sync reliability fix.
+- Update the sign-out contract to include clearing refresh-token rotation replay state while revoking only the current user's token.
+- Keep app and Worker versions unchanged for this test-only fix.
+
 ## 1.0.1282+326
 
 - Remove the redundant non-null assertion in sync conflict reconciliation after Dart flow analysis already promotes the remote change.

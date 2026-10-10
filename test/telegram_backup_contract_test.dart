@@ -66,7 +66,7 @@ void main() {
     expect(worker, contains("registrationMode: 'first-user'"));
     expect(app, contains('await state.syncToCloud(force: true);'));
     expect(app, contains('while (settlePass < 4 && await database.pendingSyncOperationCount() > 0)'));
-    expect(app, contains('serverVersion == 0 || currentRow == null'));
+    expect(app, contains('await database.reconcileSyncConflict(candidate, remote)'));
     expect(app, contains("await database.writeSyncState('serverCursor', '0');"));
     expect(app, contains('This backup contains no finance records.'));
     expect(schema, contains('CREATE TABLE IF NOT EXISTS telegram_backup_settings'));

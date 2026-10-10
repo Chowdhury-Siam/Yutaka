@@ -35,6 +35,6 @@ void main() {
 
     // Server logout only revokes the current refresh token. It must not delete
     // account finance rows when the device chooses to clear its local copy.
-    expect(worker, contains("UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND token_hash = ?"));
+    expect(worker, contains("UPDATE refresh_tokens SET revoked_at = ?, rotated_at = NULL WHERE user_id = ? AND token_hash = ?"));
   });
 }
