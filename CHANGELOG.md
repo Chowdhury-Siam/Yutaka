@@ -1,3 +1,10 @@
+## Flatpak installed-bundle verification maintenance (1.0.1282+326)
+
+- Verify the existing per-user installation instead of installing the same bundle a second time; retain sandbox dependency, startup and private SQLite checks.
+- Use Flatpak's local-bundle `--reinstall` support in the lean installer for repeated installs and bundle updates while preserving private app data.
+- Cover identical/newer bundle installs and make the verification fixture reject duplicate installs while exercising the actual launch command.
+- Keep app and Worker versions unchanged for this packaging/CI-only correction.
+
 ## Flatpak runtime keyfile maintenance (1.0.1282+326)
 
 - Accept spaces and tabs around `version`/`versions` assignments and graphics branch values; GNOME 51 runtime metadata uses `versions = ...`.

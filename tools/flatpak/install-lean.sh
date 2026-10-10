@@ -21,7 +21,9 @@ bundle="$(realpath -- "$1")"
 
 flatpak remote-add "$scope" --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 # Keep dependency verification enabled; --no-related skips extensions, not the runtime.
-flatpak install "$scope" --noninteractive --assumeyes --no-related "$bundle"
+# Local bundles need --reinstall for repeat installs; --or-update only handles refs.
+# Flatpak replaces the deployment without deleting the app's private data.
+flatpak install "$scope" --noninteractive --assumeyes --no-related --reinstall "$bundle"
 runtime="$(flatpak info "$scope" --show-runtime "$app_id")"
 [[ "$runtime" =~ ^org\.gnome\.Platform/(x86_64|aarch64)/[0-9]+$ ]] || fail "Unexpected Yutaka runtime: $runtime"
 arch="${runtime#*/}"

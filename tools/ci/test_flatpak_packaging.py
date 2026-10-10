@@ -30,11 +30,15 @@ class FlatpakPackagingTest(unittest.TestCase):
                     tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 bundle = root / 'Yutaka bundle.flatpak'
-                bundle.touch()
+                bundle.write_bytes(b'first bundle')
+                installed_bundle = root / 'installed-bundle'
+                if existing:
+                    installed_bundle.write_bytes(bundle.read_bytes())
                 log = root / 'calls.jsonl'
                 flatpak = root / 'flatpak'
                 flatpak.write_text('#!' + sys.executable + '\n' + textwrap.dedent('''
                     import json, os, sys
+                    from pathlib import Path
                     args = sys.argv[1:]
                     with open(os.environ['COMMAND_LOG'], 'a') as output:
                         output.write(json.dumps(args) + '\\n')
@@ -70,7 +74,16 @@ class FlatpakPackagingTest(unittest.TestCase):
                         else:
                             sys.exit(0 if args[1] == os.environ['EXISTING'] else 1)
                     elif args[0] == 'install':
-                        sys.exit(int(os.environ.get('INSTALL_STATUS', '0')))
+                        status = int(os.environ.get('INSTALL_STATUS', '0'))
+                        if status:
+                            sys.exit(status)
+                        if args[-1].endswith('.flatpak'):
+                            installed = Path(os.environ['INSTALLED_BUNDLE'])
+                            content = Path(args[-1]).read_bytes()
+                            if installed.exists() and installed.read_bytes() == content and '--reinstall' not in args:
+                                print('Yutaka already installed', file=sys.stderr)
+                                sys.exit(1)
+                            installed.write_bytes(content)
                     elif args[0] == 'remote-add':
                         sys.exit(0)
                     else:
@@ -80,7 +93,7 @@ class FlatpakPackagingTest(unittest.TestCase):
                 env = dict(os.environ, PATH=f'{root}{os.pathsep}{os.environ["PATH"]}',
                            COMMAND_LOG=str(log), ARCH=arch, DRIVERS=drivers, EXISTING=existing,
                            RUNTIME_SCOPE=runtime_scope, GL_BRANCH=gl_branch,
-                           METADATA_FORMAT=metadata_format,
+                           METADATA_FORMAT=metadata_format, INSTALLED_BUNDLE=str(installed_bundle),
                            RUNTIME_METADATA=str(Path(__file__).parent / 'fixtures' /
                                                 f'gnome-platform-51-{arch}.metadata'))
                 result = subprocess.run(['bash', str(script), str(bundle)], env=env,
@@ -91,6 +104,7 @@ class FlatpakPackagingTest(unittest.TestCase):
                 self.assertEqual(len(installs), 2)
                 self.assertEqual(installs[0][1], existing or '--user')
                 self.assertEqual(installs[0][-1], str(bundle))
+                self.assertIn('--reinstall', installs[0])
                 self.assertEqual(installs[1][1], runtime_scope)
                 for call in installs:
                     self.assertIn('--no-related', call)
@@ -99,6 +113,14 @@ class FlatpakPackagingTest(unittest.TestCase):
                 if 'nvidia-' in drivers:
                     expected.append(f'runtime/org.freedesktop.Platform.GL.nvidia-595-104-02/{arch}/1.4')
                 self.assertEqual(installs[1][installs[1].index('runtime-source') + 1:], expected)
+                # Local bundle installs reject an identical commit unless
+                # --reinstall is used. Also verify installing a newer bundle.
+                for content in (b'first bundle', b'newer bundle'):
+                    bundle.write_bytes(content)
+                    result = subprocess.run(['bash', str(script), str(bundle)], env=env,
+                                            capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(installed_bundle.read_bytes(), content)
                 # An installation failure must propagate and stop all later downloads.
                 log.unlink()
                 env['INSTALL_STATUS'] = '7'
@@ -159,10 +181,16 @@ class FlatpakPackagingTest(unittest.TestCase):
                 database = root / 'private.sqlite'
                 database.write_bytes(b'fixture' if has_database else b'')
                 commands = {
-                    'flatpak': '#!/bin/sh\ncase "$1" in\ninstall) exit 0;;\nrun) printf "%s" "$5" | sh -n || exit 1; exit "$RUNTIME_STATUS";;\nesac\nexit 1\n',
+                    # Verification must not install again after the lean step.
+                    'flatpak': '#!/bin/sh\ncase "$1" in\n'
+                               'install) echo "Yutaka already installed" >&2; exit 1;;\n'
+                               'run) test "$2" = --user || exit 1\n'
+                               'if [ "$3" = --command=sh ]; then\n'
+                               'printf "%s" "$6" | sh -n || exit 1; exit "$RUNTIME_STATUS"\n'
+                               'fi\nexit "$LAUNCH_STATUS";;\nesac\nexit 1\n',
                     'xvfb-run': '#!/bin/sh\nshift\nexec "$@"\n',
                     'dbus-run-session': '#!/bin/sh\nshift\nexec "$@"\n',
-                    'timeout': '#!/bin/sh\nexit "$LAUNCH_STATUS"\n',
+                    'timeout': '#!/bin/sh\nshift 2\nexec "$@"\n',
                     'find': '#!/bin/sh\nprintf "%s\\n" "$TEST_DATABASE"\n',
                 }
                 for name, content in commands.items():
@@ -172,7 +200,7 @@ class FlatpakPackagingTest(unittest.TestCase):
                 env = dict(os.environ, PATH=f'{root}{os.pathsep}{os.environ["PATH"]}',
                            LAUNCH_STATUS=str(launch_status), RUNTIME_STATUS=str(runtime_status),
                            TEST_DATABASE=str(database))
-                result = subprocess.run(['bash', str(script), 'fixture.flatpak'], cwd=root,
+                result = subprocess.run(['bash', str(script)], cwd=root,
                                         env=env, capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
 

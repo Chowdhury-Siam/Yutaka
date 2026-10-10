@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Verify the installed runtime, not the SDK used while packaging.
+# Verify the app already installed by install-lean.sh, without reinstalling it.
 set -euo pipefail
-bundle="$1"
 app_id=io.github.chowdhury_siam.Yutaka
-flatpak install --user --noninteractive --assumeyes --no-related "$bundle"
 
-flatpak run --command=sh "$app_id" -ec '
+flatpak run --user --command=sh "$app_id" -ec '
   test -f /.flatpak-info
   test -x /app/bin/yutaka
   test -x /app/lib/yutaka/yutaka
@@ -26,7 +24,7 @@ flatpak run --command=sh "$app_id" -ec '
 mkdir -p artifacts/build-logs
 set +e
 xvfb-run -a dbus-run-session -- timeout --kill-after=5s 20s \
-  flatpak run --env=GDK_BACKEND=x11 --env=LIBGL_ALWAYS_SOFTWARE=1 \
+  flatpak run --user --env=GDK_BACKEND=x11 --env=LIBGL_ALWAYS_SOFTWARE=1 \
   --env=NO_AT_BRIDGE=1 "$app_id" --enable-software-rendering \
   > artifacts/build-logs/flatpak-launch.log 2>&1
 status=$?

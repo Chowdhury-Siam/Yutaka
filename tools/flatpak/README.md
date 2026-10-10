@@ -54,7 +54,10 @@ is not the GNOME version. Graphics libraries remain necessary for rendering.
 Existing user/system installations retain their scope automatically; a fresh
 install defaults to per-user. Pass `--user` or `--system` before the bundle
 filename to choose explicitly. Existing shared packages and application data
-are left in place. A user app can reuse an existing system runtime.
+are left in place. A user app can reuse an existing system runtime. Local
+bundles use `--reinstall`, so rerunning the same installer/bundle also succeeds
+without deleting private app data. CI installs once with the lean installer,
+then verifies that per-user installation without installing the bundle again.
 
 The plain `flatpak install FILE.flatpak` command and normal graphical Flatpak
 updates can still fetch the runtime's optional extensions. The app manifest

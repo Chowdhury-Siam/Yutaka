@@ -455,7 +455,7 @@ jobs:
             echo '::error::Lean installation pulled in optional runtime extensions.'
             exit 1
           fi
-          bash tools/flatpak/verify.sh "$FLATPAK_BUNDLE"
+          bash tools/flatpak/verify.sh
 
       - name: Upload Flatpak verification logs
         if: failure()
