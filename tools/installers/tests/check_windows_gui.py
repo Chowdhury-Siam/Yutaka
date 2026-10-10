@@ -327,7 +327,9 @@ def run(compiler, fixture, logs):
             wait_for(lambda: api.control(window, "INSTALLATION COMPLETE"), "Install did not complete", 60)
             assert (destination / "Yutaka.exe").is_file(), "Custom install location was not used"
             assert not shortcut.exists(), "Deselected desktop shortcut was created"
-            api.click(api.control(window, "Done"))
+            # The status label changes before the final action captions. Wait
+            # for the actual button instead of observing a partially updated UI.
+            api.click(wait_for(lambda: api.control(window, "Done"), "Done control did not become ready"))
             finish_process()
 
             # Reinstall over the same directory; preserve data and test Launch.
@@ -358,7 +360,7 @@ def run(compiler, fixture, logs):
             assert shortcut.is_file(), "Upgrade did not restore the saved shortcut selection"
             assert backup.read_bytes() == b"preserve-financial-backup"
             assert database.read_bytes() == b"preserve-financial-data"
-            api.click(api.control(window, "Done"))
+            api.click(wait_for(lambda: api.control(window, "Done"), "Done control did not become ready"))
             finish_process()
             print("Windows setup UI passed: enabled controls, close/cancel, path validation, Browse, shortcut selection/deselection and saved choice, install, upgrade, preservation and Launch.")
         except BaseException:

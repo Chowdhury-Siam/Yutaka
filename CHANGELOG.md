@@ -1,3 +1,10 @@
+## Flatpak metadata and Windows GUI check maintenance (1.0.1282+326)
+
+- Read the complete GL extension metadata, prefer `versions` over the NVIDIA-only `version=1.4`, and select the standard Mesa branch regardless of metadata key/list order.
+- Cover both architecture metadata formats, NVIDIA selection and single-version fallback; include declared versions in graphics-detection failures.
+- Wait for the Windows installer's Done control after the completion label appears, including remembered-shortcut upgrades, instead of racing the remaining caption updates.
+- Keep app and Worker versions unchanged for these packaging/CI fixes.
+
 ## Release contract test maintenance (1.0.1282+326)
 
 - Update the Telegram backup contract to check the shared conflict reconciler used by the sync reliability fix.

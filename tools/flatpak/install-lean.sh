@@ -37,19 +37,30 @@ origin="$(flatpak info "$runtime_scope" --show-origin "runtime/$runtime")"
 
 # Read the Freedesktop GL ABI from the runtime instead of confusing it with GNOME 51.
 gl_versions=
+gl_version=
 in_gl=false
 while IFS= read -r line; do
   line="${line%$'\r'}"
   case "$line" in
     '[Extension org.freedesktop.Platform.GL]') in_gl=true ;;
     '['*) in_gl=false ;;
-    versions=*|version=*)
-      if "$in_gl"; then gl_versions="${line#*=}"; break; fi ;;
+    versions=*) if "$in_gl"; then gl_versions="${line#*=}"; fi ;;
+    version=*) if "$in_gl"; then gl_version="${line#*=}"; fi ;;
   esac
 done <<< "$metadata"
-gl_branch="${gl_versions%%;*}"
-[[ "$gl_branch" =~ ^[0-9]+\.[0-9]+$ && "$gl_branch" != 1.4 ]] || fail \
-  'Could not determine the runtime graphics branch; installation is incomplete.'
+# The singular version can be NVIDIA's 1.4 even when versions lists Mesa too.
+# Prefer the full list regardless of key order and skip NVIDIA/extra branches.
+gl_versions="${gl_versions:-$gl_version}"
+IFS=';' read -r -a gl_branches <<< "$gl_versions"
+gl_branch=
+for branch in "${gl_branches[@]}"; do
+  if [[ "$branch" =~ ^[0-9]+\.[0-9]+$ && "$branch" != 1.4 ]]; then
+    gl_branch="$branch"
+    break
+  fi
+done
+[[ -n "$gl_branch" ]] || fail \
+  "Could not determine the runtime graphics branch (declared: ${gl_versions:-missing}); installation is incomplete."
 
 graphics=("runtime/org.freedesktop.Platform.GL.default/$arch/$gl_branch")
 drivers="$(flatpak --gl-drivers)"

@@ -63,6 +63,21 @@ class WindowsGuiPollingTest(unittest.TestCase):
         self.assertEqual(result, 20)
         self.assertEqual(self.fixture.messages, [])
 
+    def test_done_caption_can_follow_completion_label(self):
+        self.fixture.controls[20] = ("TNewStaticText", "INSTALLATION COMPLETE")
+        self.fixture.controls[30] = ("TNewButton", "Cancel")
+        self.assertEqual(self.api.control(1, "INSTALLATION COMPLETE"), 20)
+        self.assertIsNone(self.api.control(1, "Done"))
+
+        def finish_captions(_):
+            self.fixture.controls[30] = ("TNewButton", "Done")
+
+        with patch.object(gui.time, "sleep", side_effect=finish_captions):
+            result = gui.wait_for(lambda: self.api.control(1, "Done"),
+                                  "Done control did not become ready", timeout=1)
+        self.assertEqual(result, 30)
+        self.assertEqual(self.fixture.messages, [])
+
     def test_missing_completion_still_fails_at_overall_deadline(self):
         with patch.object(gui.time, "monotonic", side_effect=[0, 0, 2]), \
                 patch.object(gui.time, "sleep"):
