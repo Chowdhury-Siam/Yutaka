@@ -138,15 +138,22 @@ void main() {
 
   testWidgets('two callbacks before rebuild submit once and close after local commit', (tester) async {
     await openEditor(tester);
-    controller.saveGate = Completer<void>();
     final save = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Save')).onPressed!;
     await tester.runAsync(() async {
+      // Create and complete the gate in runAsync's real zone. A gate created
+      // in the widget test's fake zone needs a pump to deliver completion.
+      controller.saveGate = Completer<void>();
       final first = Function.apply(save, const []) as Future<void>;
-      await (Function.apply(save, const []) as Future<void>);
-      expect(controller.attemptedIds, hasLength(1));
-      controller.saveGate!.complete();
-      await first;
+      try {
+        await (Function.apply(save, const []) as Future<void>)
+            .timeout(const Duration(seconds: 10));
+        expect(controller.attemptedIds, hasLength(1));
+      } finally {
+        controller.saveGate!.complete();
+        await first.timeout(const Duration(seconds: 10));
+      }
     });
+    expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();
     expect(find.byType(TransactionEditor), findsNothing);
     expect(controller.transactions, hasLength(1));
@@ -159,16 +166,20 @@ void main() {
     controller.failAfterCommit = true;
     final firstSave = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Save')).onPressed!;
     await tester.runAsync(() async {
-      await (Function.apply(firstSave, const []) as Future<void>);
+      await (Function.apply(firstSave, const []) as Future<void>)
+          .timeout(const Duration(seconds: 10));
     });
+    expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();
     expect(find.byType(TransactionEditor), findsOneWidget);
     expect(controller.transactions, hasLength(1));
     controller.failAfterCommit = false;
     final retry = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Save')).onPressed!;
     await tester.runAsync(() async {
-      await (Function.apply(retry, const []) as Future<void>);
+      await (Function.apply(retry, const []) as Future<void>)
+          .timeout(const Duration(seconds: 10));
     });
+    expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();
     expect(controller.attemptedIds, hasLength(2));
     expect(controller.attemptedIds.toSet(), hasLength(1));

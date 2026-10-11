@@ -1,3 +1,8 @@
+## Transaction editor test timing cleanup (1.0.1289+333)
+
+- Create the rapid-save test's pause signal inside the real async zone that awaits it, preventing a fake-clock deadlock and the following test's reentrant runAsync failure.
+- Release the pause signal even if an assertion fails and bound real save waits to ten seconds, so failures surface promptly. Preserve all save assertions and keep app and Worker versions unchanged.
+
 ## 1.0.1289+333
 
 - Save new transactions, account balances and coalesced sync-outbox records in one SQLite commit. Return the updated transaction/account snapshot from that commit so the editor does not wait for post-save database refreshes.
