@@ -1,3 +1,8 @@
+## README presentation refresh (1.0.1289+333)
+
+- Replace the README banner with Yutaka branding, a green ribbon motif, and platform labels; reorganize the introduction, badges, feature grid, installation, settings, development, publishing, and troubleshooting sections.
+- Preserve the detailed setup and build instructions in `docs/GUIDE.md` and link them from the shorter README. Keep app and Worker versions unchanged for this documentation update.
+
 ## Transaction editor test timing cleanup (1.0.1289+333)
 
 - Create the rapid-save test's pause signal inside the real async zone that awaits it, preventing a fake-clock deadlock and the following test's reentrant runAsync failure.
