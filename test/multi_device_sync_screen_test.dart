@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,8 +57,6 @@ void main() {
 
   for (final register in [false, true]) {
     testWidgets('Enter submits ${register ? 'registration' : 'first login'} and keeps setup available', (tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
       await tester.binding.setSurfaceSize(const Size(1200, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final controller = SetupAuthController();
@@ -96,6 +93,6 @@ void main() {
       expect(controller.onboardingCompleted, isFalse);
       expect(find.text('Currency setup'), findsOneWidget);
       expect(tester.takeException(), isNull);
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
   }
 }

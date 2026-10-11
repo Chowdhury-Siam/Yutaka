@@ -1,3 +1,8 @@
+## Desktop Enter test cleanup (1.0.1288+332)
+
+- Use Flutter's Windows target-platform test variant so the platform override is restored before framework invariant checks, including when an assertion fails.
+- Preserve login, registration, focus and unfinished-setup assertions; keep app and Worker versions unchanged for this test-only correction.
+
 ## 1.0.1288+332
 
 - Correct desktop Enter regressions to simulate native text-input actions, verify username-to-password focus, and retain first-login/registration setup checks.
