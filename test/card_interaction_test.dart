@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'package:yutaka/main.dart';
@@ -59,6 +60,7 @@ void main() {
             );
           }),
         ));
+        await tester.runAsync(() => GoogleFonts.pendingFonts());
         await tester.pumpAndSettle();
         final rect = tester.getRect(find.byType(ExpressiveCard));
         final points = [

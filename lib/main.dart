@@ -95,6 +95,10 @@ String _legacyUsernameFromEmail(String value) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  LicenseRegistry.addLicense(() async* {
+    final license = await rootBundle.loadString('assets/fonts/OFL.txt');
+    yield LicenseEntryWithLineBreaks(const ['Inter'], license);
+  });
   if (kUsesDesktopSqlite) {
     sqflite_ffi.sqfliteFfiInit();
     sql.databaseFactory = sqflite_ffi.databaseFactoryFfi;

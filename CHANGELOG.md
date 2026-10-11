@@ -1,3 +1,9 @@
+## 1.0.1288+332
+
+- Correct desktop Enter regressions to simulate native text-input actions, verify username-to-password focus, and retain first-login/registration setup checks.
+- Bundle the Inter Regular and Medium fonts used by the app text theme, with their license, so font loading works offline and widget tests avoid HTTP fetching.
+- Keep the first-login setup and existing-loan fixes; synchronize release metadata.
+
 ## 1.0.1287+331
 
 - Keep first-run setup available after login to a new or unfinished account, including accounts created in the administrator portal.

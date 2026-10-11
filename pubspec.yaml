@@ -1,7 +1,7 @@
 name: yutaka
 description: Flutter rebuild of the Yutaka personal finance tracker with adaptive Material 3 UI for Android, Windows, Linux, and macOS.
 publish_to: "none"
-version: 1.0.1287+331
+version: 1.0.1288+332
 environment:
   sdk: ">=3.12.0 <4.0.0"
 
@@ -55,5 +55,6 @@ flutter:
     - assets/images/
     - assets/icons/
     - assets/lottie/
+    - assets/fonts/
     - assets/worker/
     - cloud/worker/schema.sql

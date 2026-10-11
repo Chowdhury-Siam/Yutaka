@@ -73,8 +73,17 @@ void main() {
       Finder field(String label) => find.byWidgetPredicate(
           (widget) => widget is TextField && widget.decoration?.labelText == label);
       await tester.enterText(field('Username'), 'owner');
+      await tester.testTextInput.receiveAction(TextInputAction.next);
+      await tester.pump();
+      final passwordInput = tester.widget<EditableText>(find.descendant(
+        of: field('Password'), matching: find.byType(EditableText),
+      ));
+      expect(passwordInput.focusNode.hasFocus, isTrue);
+      expect(controller.submissions, 0);
       await tester.enterText(field('Password'), 'password123');
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      // Native desktop Enter produces a text-input action. A raw key event
+      // in a widget test does not pass through the platform's text input.
+      await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
       expect(controller.submissions, 1);
