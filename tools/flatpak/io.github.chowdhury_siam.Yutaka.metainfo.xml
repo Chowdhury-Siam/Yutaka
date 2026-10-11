@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1289" date="2026-10-11">
+      <description><p>Commit transaction saves atomically and prevent duplicate submissions of the same draft.</p></description>
+    </release>
     <release version="1.0.1288" date="2026-10-11">
       <description><p>Correct desktop text-input tests and bundle the app text-theme fonts for offline use.</p></description>
     </release>

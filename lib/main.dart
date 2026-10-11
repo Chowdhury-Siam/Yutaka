@@ -1007,14 +1007,37 @@ class YutakaDatabase {
     return maps.map(MoneyTransaction.fromMap).toList();
   }
 
-  Future<void> addTransaction(MoneyTransaction transaction) async {
+  Future<({List<Account> accounts, List<MoneyTransaction> transactions})> addTransaction(MoneyTransaction transaction) async {
     if (transaction.type == MoneyTransactionType.transfer && transaction.fromAccountId == transaction.toAccountId) {
       throw StateError('Transfer source and destination account cannot be the same.');
     }
     final database = await db;
-    await database.transaction((txn) async {
-      await txn.insert('transactions', transaction.toMap(), conflictAlgorithm: sql.ConflictAlgorithm.replace);
-      await _applyTransaction(txn, transaction, 1);
+    return database.transaction((txn) async {
+      final existing = await txn.query('transactions', columns: ['id'],
+          where: 'id = ?', whereArgs: [transaction.id], limit: 1);
+      final isNew = existing.isEmpty;
+      if (isNew) {
+        await txn.insert('transactions', transaction.toMap(), conflictAlgorithm: sql.ConflictAlgorithm.abort);
+        await _applyTransaction(txn, transaction, 1);
+        await _enqueueSyncOperation(txn, entityType: 'transactions',
+            entityId: transaction.id, operation: 'upsert', payload: transaction.toMap());
+      }
+      final accountRows = await txn.query('accounts', orderBy: 'sequence ASC, created_on ASC');
+      if (isNew) {
+        final touched = {transaction.fromAccountId, transaction.toAccountId};
+        for (final row in accountRows.where((row) => touched.contains(row['id']))) {
+          await _enqueueSyncOperation(txn, entityType: 'accounts',
+              entityId: row['id'] as String, operation: 'upsert', payload: row);
+        }
+      }
+      final transactionRows = await txn.query('transactions',
+          orderBy: 'created_on DESC, updated_on DESC, id DESC');
+      // Publish this snapshot without any post-commit database waits. A retry
+      // of the same draft ID returns its saved state without moving money again.
+      return (
+        accounts: accountRows.map(Account.fromMap).toList(),
+        transactions: transactionRows.map(MoneyTransaction.fromMap).toList(),
+      );
     });
   }
 
@@ -1339,30 +1362,38 @@ class YutakaDatabase {
     required String operation,
     required Map<String, Object?>? payload,
   }) async {
+    final database = await db;
+    await database.transaction((txn) => _enqueueSyncOperation(txn,
+        entityType: entityType, entityId: entityId, operation: operation, payload: payload));
+  }
+
+  Future<void> _enqueueSyncOperation(sql.DatabaseExecutor txn, {
+    required String entityType,
+    required String entityId,
+    required String operation,
+    required Map<String, Object?>? payload,
+  }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final id = _uuid.v4();
     // Keep the latest pending mutation for every entity, including deletes.
-    // Sending several local edits with the same base creates self-conflicts.
-    final database = await db;
-    await database.transaction((txn) async {
-      final versions = await txn.query('sync_entity_versions',
-          columns: ['version'],
-          where: 'entity_type = ? AND entity_id = ?',
-          whereArgs: [entityType, entityId],
-          limit: 1);
-      final baseVersion = versions.isEmpty ? 0 : (versions.first['version'] as num? ?? 0).toInt();
-      await txn.delete('sync_outbox',
-          where: 'entity_type = ? AND entity_id = ?',
-          whereArgs: [entityType, entityId]);
-      await txn.insert('sync_outbox', {
-        'id': id,
-        'entity_type': entityType,
-        'entity_id': entityId,
-        'operation': operation,
-        'payload_json': payload == null ? null : jsonEncode(payload),
-        'base_version': baseVersion,
-        'created_at': now,
-      });
+    // Use the caller's executor so transaction writes and outbox rows commit together.
+    final versions = await txn.query('sync_entity_versions',
+        columns: ['version'],
+        where: 'entity_type = ? AND entity_id = ?',
+        whereArgs: [entityType, entityId],
+        limit: 1);
+    final baseVersion = versions.isEmpty ? 0 : (versions.first['version'] as num? ?? 0).toInt();
+    await txn.delete('sync_outbox',
+        where: 'entity_type = ? AND entity_id = ?',
+        whereArgs: [entityType, entityId]);
+    await txn.insert('sync_outbox', {
+      'id': id,
+      'entity_type': entityType,
+      'entity_id': entityId,
+      'operation': operation,
+      'payload_json': payload == null ? null : jsonEncode(payload),
+      'base_version': baseVersion,
+      'created_at': now,
     });
   }
 
@@ -7612,13 +7643,14 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> addTransaction(MoneyTransaction tx) async {
-    // Persist locally first. Cloud upload is only queued after the local row,
-    // balance mutation and sync-outbox entries are ready; no network request is
-    // awaited by the transaction dialog.
-    await database.addTransaction(tx);
-    await database.enqueueTableRow('transactions', tx.id);
-    await _enqueueTouchedTransactionAccounts([tx.fromAccountId, tx.toAccountId]);
-    await _refreshTransactionProjection(queueSync: true);
+    // The row, balances, outbox and UI snapshot belong to one local commit.
+    // Do not keep the editor busy on further database work after it succeeds.
+    final saved = await database.addTransaction(tx);
+    accounts = saved.accounts;
+    transactions = saved.transactions;
+    _rebuildLookupCaches();
+    notifyListeners();
+    queueCloudSync();
   }
 
   Future<void> updateTransaction(MoneyTransaction tx) async {
@@ -18439,6 +18471,7 @@ class TransactionEditor extends StatefulWidget {
 }
 
 class _TransactionEditorState extends State<TransactionEditor> {
+  late final String _transactionId;
   final title = TextEditingController();
   final notes = TextEditingController();
   final amount = TextEditingController();
@@ -18463,6 +18496,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
     amountFocus.addListener(_handleAmountFocusChanged);
     final state = context.read<AppController>();
     final tx = widget.transaction;
+    _transactionId = tx?.id ?? _uuid.v4();
     if (tx != null) {
       title.text = tx.title;
       notes.text = tx.notes;
@@ -18848,6 +18882,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
                 onPressed: busy
                     ? null
                     : () async {
+                        if (busy) return;
                         _dismissAmountFocus();
                         final baseValue = double.tryParse(amount.text) ?? 0;
                         if (baseValue <= 0) return showSnack(context, 'Enter a valid amount');
@@ -18883,7 +18918,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
                         setState(() => busy = true);
                         try {
                           final tx = MoneyTransaction(
-                            id: widget.transaction?.id ?? _uuid.v4(),
+                            id: _transactionId,
                             type: type,
                             amount: postedAmount,
                             baseAmount: baseValue,

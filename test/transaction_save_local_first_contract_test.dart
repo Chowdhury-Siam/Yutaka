@@ -21,9 +21,10 @@ void main() {
     );
 
     expect(add, contains('await database.addTransaction(tx);'));
-    expect(add, contains("await database.enqueueTableRow('transactions', tx.id);"));
-    expect(add, contains('await _enqueueTouchedTransactionAccounts([tx.fromAccountId, tx.toAccountId]);'));
-    expect(add, contains('await _refreshTransactionProjection(queueSync: true);'));
+    expect(RegExp(r'\bawait\b').allMatches(add), hasLength(1));
+    expect(add, contains('accounts = saved.accounts;'));
+    expect(add, contains('transactions = saved.transactions;'));
+    expect(add, contains('queueCloudSync();'));
     expect(add, isNot(contains('await reload(')));
     expect(add, isNot(contains('syncToCloud(')));
   });

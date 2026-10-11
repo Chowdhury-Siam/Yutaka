@@ -1,3 +1,10 @@
+## 1.0.1289+333
+
+- Save new transactions, account balances and coalesced sync-outbox records in one SQLite commit. Return the updated transaction/account snapshot from that commit so the editor does not wait for post-save database refreshes.
+- Give each transaction form a stable draft ID, ignore repeat creation of a saved ID without applying its balance again, and guard rapid Save callbacks before the button rebuilds. Separate drafts with identical details remain valid.
+- Add SQLite and editor regressions for expense/income/transfer retries, atomic rollback, rapid submission, post-commit retry and dialog completion.
+- Synchronize release metadata and retain all setup, keyboard, font and backup fixes.
+
 ## Desktop Enter test cleanup (1.0.1288+332)
 
 - Use Flutter's Windows target-platform test variant so the platform override is restored before framework invariant checks, including when an assertion fails.
