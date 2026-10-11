@@ -74,6 +74,25 @@ class RemoteSyncHistoryMergeResult {
   bool get recoveredLegacyData => recoveredLegacyEntityCount > 0;
 }
 
+bool syncAccountHasCompletedSetup(List<Map<String, dynamic>> changes) {
+  final snapshot = mergeRemoteSyncHistoryNonDestructively(changes).changes;
+  for (final change in snapshot) {
+    final payload = change['payload'];
+    if (change['entityType'] == 'preferences' && change['operation'] == 'upsert' &&
+        payload is Map && payload['accountSetupCompleted'] is bool) {
+      return payload['accountSetupCompleted'] == true;
+    }
+  }
+  // Legacy accounts have no completion marker. Seeded categories and settings
+  // alone are not evidence that a person has configured their finances.
+  const configuredEntities = {
+    'accounts', 'transactions', 'budgets', 'loans', 'loan_contacts',
+    'loan_payments', 'notes', 'planned_purchases', 'subscriptions',
+  };
+  return snapshot.any((change) =>
+      change['operation'] == 'upsert' && configuredEntities.contains(change['entityType']));
+}
+
 /// Converts legacy destructive reset history into non-destructive merge history.
 ///
 /// Older Yutaka/Koinly clients used a `__reset__` marker followed by only the
@@ -170,6 +189,11 @@ Map<String, dynamic> mergeFinancePreferences(
     } else {
       merged[entry.key] = value;
     }
+  }
+
+  // An unfinished device must not undo a completed account's setup marker.
+  if (current['accountSetupCompleted'] == true || incoming['accountSetupCompleted'] == true) {
+    merged['accountSetupCompleted'] = true;
   }
 
   // These IDs can reference a category that was collapsed while combining the

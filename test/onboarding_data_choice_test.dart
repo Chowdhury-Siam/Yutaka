@@ -71,7 +71,7 @@ void main() {
     expect(find.text('Start'), findsOneWidget);
   });
 
-  testWidgets('existing loan guidance fits a small display with large text', (tester) async {
+  testWidgets('existing loan actions align on a small display with large text', (tester) async {
     final controller = AppController();
     addTearDown(controller.dispose);
     await tester.binding.setSurfaceSize(const Size(320, 568));
@@ -84,6 +84,15 @@ void main() {
         child: LoanSetupPane(state: controller, onSkip: () async { skipped = true; }),
       ))),
     ));
+    expect(find.text('Avoid counting old money twice'), findsNothing);
+    final borrowedButton = tester.getRect(find.widgetWithText(FilledButton, 'Money I owe'));
+    final lentButton = tester.getRect(find.widgetWithText(OutlinedButton, 'Money owed to me'));
+    final skipButton = tester.getRect(find.widgetWithText(TextButton, 'Skip loans'));
+    expect(borrowedButton.left, lentButton.left);
+    expect(borrowedButton.right, lentButton.right);
+    expect(borrowedButton.bottom, lessThan(lentButton.top));
+    expect(lentButton.bottom, lessThan(skipButton.top));
+    expect(skipButton.center.dx, borrowedButton.center.dx);
     await tester.ensureVisible(find.text('Skip loans'));
     await tester.tap(find.text('Skip loans'));
     await tester.pump();

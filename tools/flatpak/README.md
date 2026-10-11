@@ -39,7 +39,7 @@ On a Linux computer with Flatpak installed, download both release files and run
 the lean installer (replace the filenames for ARM64 or a later release):
 
 ```bash
-bash ./Yutaka-v1.0.1285-linux-x64-Install-flatpak.sh ./Yutaka-v1.0.1285-linux-x64.flatpak
+bash ./Yutaka-v1.0.1287-linux-x64-Install-flatpak.sh ./Yutaka-v1.0.1287-linux-x64.flatpak
 flatpak run io.github.chowdhury_siam.Yutaka
 ```
 
@@ -69,7 +69,7 @@ use the standard installation command:
 
 ```bash
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user ./Yutaka-v1.0.1285-linux-x64.flatpak
+flatpak install --user ./Yutaka-v1.0.1287-linux-x64.flatpak
 ```
 
 CI tests the lean installation in fresh user/system Flatpak directories, checks

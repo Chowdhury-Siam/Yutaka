@@ -2940,15 +2940,12 @@ class AppController extends ChangeNotifier {
     newSyncAccountAwaitingSetupChoice = await prefs.getBool('newSyncAccountAwaitingSetupChoice', false);
     await _loadSyncProfilesAndMigrateLegacySession();
 
-    // A successfully authenticated existing account is already a configured
-    // Yutaka setup. Older builds could persist the sync session before the
-    // onboarding completion flag, which left returning users trapped on the
-    // first-run "Continue setup" screen after an app restart. Keep the
-    // explicit setup choice only for a newly registered account.
+    // A saved login alone does not prove that first-run setup was completed.
     if (!onboardingCompleted &&
         cloudSyncEnabled &&
         syncAccountUsername.trim().isNotEmpty &&
-        !newSyncAccountAwaitingSetupChoice) {
+        !newSyncAccountAwaitingSetupChoice &&
+        await prefs.getBool('accountSetupCompleted', false)) {
       onboardingCompleted = true;
       await prefs.setBool('onboardingCompleted', true);
       if (kIsDesktopApp) {
@@ -3528,6 +3525,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>> exportPreferences() async => {
+        'accountSetupCompleted': onboardingCompleted || await prefs.getBool('accountSetupCompleted', false),
         'themePreference': enumName(themePreference),
         'startupPage': enumName(startupPage),
         'currencySymbol': currencySymbol,
@@ -5246,10 +5244,8 @@ class AppController extends ChangeNotifier {
         unawaited(checkForAutomaticWorkerUpdate());
       }
       await database.writeSyncState('serverCursor', '0');
-      if (!register || !deferInitialDataSync) {
-        newSyncAccountAwaitingSetupChoice = false;
-        await prefs.setBool('newSyncAccountAwaitingSetupChoice', false);
-      }
+      newSyncAccountAwaitingSetupChoice = !onboardingCompleted && (!register || deferInitialDataSync);
+      await prefs.setBool('newSyncAccountAwaitingSetupChoice', newSyncAccountAwaitingSetupChoice);
       if (authoritativeCloudUploadPending) {
         await _prepareRestoredDataForMergeSync();
       }
@@ -5263,17 +5259,12 @@ class AppController extends ChangeNotifier {
         await database.enqueueAllForAdoption(await exportPreferences());
         await performMultiDeviceSync(silent: true);
       } else {
-        await _mergeAfterExistingAccountAuth(preferCloudData: preferCloudData);
-
-        // Logging in to an existing account must finish first-run onboarding
-        // regardless of which screen initiated authentication. Previously the
-        // UI route was responsible for setting this flag, so a valid login
-        // could still return to the "Continue setup" page.
-        if (!onboardingCompleted) {
+        final accountSetupCompleted = await _mergeAfterExistingAccountAuth(preferCloudData: preferCloudData);
+        if (!onboardingCompleted && accountSetupCompleted && cloudSyncError == null) {
           await completeOnboarding();
         }
       }
-      if (!(register && deferInitialDataSync)) {
+      if (!newSyncAccountAwaitingSetupChoice) {
         _startCloudAutoPull();
       }
     } catch (error) {
@@ -5291,16 +5282,27 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> _mergeAfterExistingAccountAuth({required bool preferCloudData}) async {
+  Future<bool> _mergeAfterExistingAccountAuth({required bool preferCloudData}) async {
     // Existing-account authentication is a two-phase merge. Pull the complete
     // cloud state first so server versions are known, then adopt the merged
     // local snapshot back to cloud. Local-only records are preserved.
     await discardPreloadedStarterAccountsForImport();
+    var accountSetupCompleted = false;
     await performMultiDeviceSync(
       silent: !preferCloudData,
       pushLocalChanges: false,
       pullFullCloudCopy: true,
+      onCloudSnapshot: (changes) => accountSetupCompleted = syncAccountHasCompletedSetup(changes),
     );
+    if (cloudSyncError != null) {
+      return false;
+    }
+    if (!onboardingCompleted && !accountSetupCompleted) {
+      syncStatus = 'Signed in • Continue setup';
+      return false;
+    }
+    newSyncAccountAwaitingSetupChoice = false;
+    await prefs.setBool('newSyncAccountAwaitingSetupChoice', false);
     final removedCloudStarterPlaceholders = await discardPreloadedStarterAccountsForImport();
     if (cloudSyncError == null) {
       await syncToCloud(force: true, silent: true);
@@ -5308,6 +5310,7 @@ class AppController extends ChangeNotifier {
     if (removedCloudStarterPlaceholders && cloudSyncError == null) {
       await performMultiDeviceSync(silent: true, pushLocalChanges: true, pullFullCloudCopy: true);
     }
+    return accountSetupCompleted;
   }
 
   void _throwIfCloudSyncCancelled(int cancellationSerial) {
@@ -5847,7 +5850,7 @@ class AppController extends ChangeNotifier {
   }
 
 
-  Future<void> performMultiDeviceSync({bool silent = false, bool pushLocalChanges = true, bool pullFullCloudCopy = false, bool retryAfterRefresh = true}) async {
+  Future<void> performMultiDeviceSync({bool silent = false, bool pushLocalChanges = true, bool pullFullCloudCopy = false, bool retryAfterRefresh = true, void Function(List<Map<String, dynamic>>)? onCloudSnapshot}) async {
     if (_syncAccountTransitionInProgress) return;
     if (!_hasConfiguredSyncTarget()) {
       if (!silent) {
@@ -5963,6 +5966,7 @@ class AppController extends ChangeNotifier {
       // legacy replace even before the Worker itself has been redeployed.
       final mergedHistory = mergeRemoteSyncHistoryNonDestructively(remoteChanges);
       final mergedRemoteChanges = mergedHistory.changes;
+      onCloudSnapshot?.call(mergedRemoteChanges);
 
 
       var preservedNewerLocal = false;
@@ -6046,7 +6050,7 @@ class AppController extends ChangeNotifier {
             _throwIfCloudSyncCancelled(cancellationSerial);
             _syncInProgress = false;
             cloudSyncBusy = false;
-            await performMultiDeviceSync(silent: silent, pushLocalChanges: pushLocalChanges, pullFullCloudCopy: pullFullCloudCopy, retryAfterRefresh: false);
+            await performMultiDeviceSync(silent: silent, pushLocalChanges: pushLocalChanges, pullFullCloudCopy: pullFullCloudCopy, retryAfterRefresh: false, onCloudSnapshot: onCloudSnapshot);
             return;
           } catch (refreshError) {
             if (cancellationSerial != _cloudSyncCancellationSerial) {
@@ -6230,7 +6234,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _schedulePendingSyncRetry({bool immediate = false}) {
-    if (!_hasConfiguredSyncTarget()) return;
+    if (!_hasConfiguredSyncTarget() || newSyncAccountAwaitingSetupChoice) return;
     if (immediate && cloudSyncPending && !cloudSyncBusy) {
       unawaited(syncToCloud(silent: true));
     }
@@ -6247,7 +6251,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _startCloudAutoPull({bool pullImmediately = true}) {
-    if (!_hasConfiguredSyncTarget()) {
+    if (!_hasConfiguredSyncTarget() || newSyncAccountAwaitingSetupChoice) {
       _stopCloudAutoPull();
       return;
     }
@@ -6380,7 +6384,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> syncCloudChangesIfIdle({bool force = false}) async {
-    if (!_hasConfiguredSyncTarget() || syncAuthBusy || updateDownloadBusy) return;
+    if (!_hasConfiguredSyncTarget() || newSyncAccountAwaitingSetupChoice || syncAuthBusy || updateDownloadBusy) return;
     if (_syncInProgress || cloudSyncBusy) return;
     final now = DateTime.now();
     if (!force && _lastCloudAutoPullAt != null && now.difference(_lastCloudAutoPullAt!) < _cloudSyncAutoPullMinimumGap) return;
@@ -6677,16 +6681,20 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> completeOnboarding() async {
-    if (newSyncAccountAwaitingSetupChoice && _hasConfiguredSyncTarget()) {
-      await resolveNewSyncAccountWithLocalSetup();
-    }
     onboardingCompleted = true;
     if (kIsDesktopApp) {
       desktopSetupVersionCompleted = kRequiredDesktopSetupVersion;
     }
     await prefs.setBool('onboardingCompleted', true);
+    await prefs.setBool('accountSetupCompleted', true);
     if (kIsDesktopApp) {
       await prefs.setInt('desktopSetupVersionCompleted', desktopSetupVersionCompleted);
+    }
+    if (newSyncAccountAwaitingSetupChoice && _hasConfiguredSyncTarget()) {
+      await resolveNewSyncAccountWithLocalSetup();
+    } else if (_hasConfiguredSyncTarget()) {
+      await database.enqueuePreferences(await exportPreferences());
+      queueCloudSync(immediate: true);
     }
     notifyListeners();
   }
@@ -11820,7 +11828,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _openAccountSync({required bool createAccount}) async {
-    final createdAccount = await Navigator.push<bool>(
+    final needsInitialSetup = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => MultiDeviceSyncScreen(
@@ -11831,12 +11839,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ),
       ),
     );
-    if (!mounted || createdAccount != true) return;
+    if (!mounted || needsInitialSetup != true) return;
 
-    // Registration does not assume whether this device should start clean or
-    // restore an existing local backup. Ask immediately after account creation.
-    // This also covers users who entered through Login and then switched to
-    // "Create account instead" inside the auth screen.
+    // Both registration and login to an unconfigured account need this choice.
     await _chooseInitialSetup(syncAccountCreated: true);
   }
 
@@ -12207,6 +12212,10 @@ class LoanSetupPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const loanButtonStyle = ButtonStyle(
+      minimumSize: WidgetStatePropertyAll(Size(0, 52)),
+      padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 20, vertical: 14)),
+    );
     return OnboardingPageFrame(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -12216,19 +12225,6 @@ class LoanSetupPane extends StatelessWidget {
           Text('Add existing loans', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900)),
           const SizedBox(height: 12),
           const Text('Already owe someone money, or waiting to be repaid? Add the amount still owed now. Loans added here leave your current account balances unchanged.', textAlign: TextAlign.center),
-          const SizedBox(height: 16),
-          const ExpressiveCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Avoid counting old money twice', style: TextStyle(fontWeight: FontWeight.w900)),
-                SizedBox(height: 8),
-                Text('If your current balance is 1,000 and already includes 200 borrowed, record 200 as an existing loan. Your balance stays 1,000. Recording it as new money would incorrectly increase it to 1,200.'),
-                SizedBox(height: 8),
-                Text('Use the amount still owed today, not the original amount before repayments. Keep today’s start date for this opening balance; interest runs from that date.'),
-              ],
-            ),
-          ),
           const SizedBox(height: 16),
           ...state.loans.map((loan) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
@@ -12242,27 +12238,34 @@ class LoanSetupPane extends StatelessWidget {
                   ),
                 ),
               )),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              FilledButton.icon(
-                onPressed: () => showLoanEditorSheet(context, existingLoan: true, defaultDirection: LoanDirection.borrowed),
-                icon: const Icon(Icons.south_west_rounded),
-                label: const Text('Money I owe'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => showLoanEditorSheet(context, existingLoan: true),
-                icon: const Icon(Icons.north_east_rounded),
-                label: const Text('Money owed to me'),
-              ),
-              TextButton.icon(
-                onPressed: onSkip,
-                icon: const Icon(Icons.skip_next_rounded),
-                label: const Text('Skip loans'),
-              ),
-            ],
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FilledButton.icon(
+                  style: loanButtonStyle,
+                  onPressed: () => showLoanEditorSheet(context, existingLoan: true, defaultDirection: LoanDirection.borrowed),
+                  icon: const Icon(Icons.south_west_rounded),
+                  label: const Text('Money I owe'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  style: loanButtonStyle,
+                  onPressed: () => showLoanEditorSheet(context, existingLoan: true),
+                  icon: const Icon(Icons.north_east_rounded),
+                  label: const Text('Money owed to me'),
+                ),
+                const SizedBox(height: 8),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: onSkip,
+                    icon: const Icon(Icons.skip_next_rounded),
+                    label: const Text('Skip loans'),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
           const Text('You can add these later: choose Existing loan in Loans. Choose New money only when money is moving now.', textAlign: TextAlign.center),
@@ -23134,6 +23137,9 @@ class _MultiDeviceSyncScreenState extends State<MultiDeviceSyncScreen> {
 
   Future<void> _saveSyncEndpoint() async {
     final state = context.read<AppController>();
+    if (_endpointBusy || state.cloudSyncOperationBusy || state.workerAutoUpdateBusy) {
+      return;
+    }
     final wasSignedIn = state.cloudSyncEnabled;
     setState(() => _endpointBusy = true);
     try {
@@ -23157,6 +23163,9 @@ class _MultiDeviceSyncScreenState extends State<MultiDeviceSyncScreen> {
 
   Future<void> _login({required bool register}) async {
     final state = context.read<AppController>();
+    if (_endpointBusy || state.cloudSyncOperationBusy || state.workerAutoUpdateBusy) {
+      return;
+    }
     final onboardingAuthFlow = widget.completeOnAuth || widget.returnOnAuth;
     if (!_isWorkerActive(state)) {
       showSnack(context, 'Validate and use the self-hosted Worker first.');
@@ -23206,15 +23215,16 @@ class _MultiDeviceSyncScreenState extends State<MultiDeviceSyncScreen> {
             ? onboardingAuthFlow
                 ? 'Account created. Choose Restore backup or Start new.'
                 : 'Account created. Sync started.'
-            : deploymentValuesRestored
-                ? 'Signed in. Cloud data loaded and deployment values restored.'
-                : 'Signed in. Cloud data loaded.',
+            : !state.onboardingCompleted
+                ? 'Signed in. Continue setup.'
+                : deploymentValuesRestored
+                    ? 'Signed in. Cloud data loaded and deployment values restored.'
+                    : 'Signed in. Cloud data loaded.',
       );
       if (register && onboardingAuthFlow) {
         if (mounted) Navigator.pop(context, true);
       } else if (!register && onboardingAuthFlow) {
-        await state.completeOnboarding();
-        if (mounted) Navigator.pop(context, false);
+        Navigator.pop(context, !state.onboardingCompleted);
       } else if (widget.returnOnAuth) {
         if (mounted) Navigator.pop(context, false);
       }
@@ -23455,6 +23465,7 @@ class _MultiDeviceSyncScreenState extends State<MultiDeviceSyncScreen> {
                 onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                 controller: workerController,
                 keyboardType: TextInputType.url,
+                textInputAction: TextInputAction.next,
                 decoration: const InputDecoration(labelText: 'Worker URL', prefixIcon: Icon(Icons.link_rounded)),
               ),
               const SizedBox(height: 8),
@@ -23484,6 +23495,7 @@ class _MultiDeviceSyncScreenState extends State<MultiDeviceSyncScreen> {
                 onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                 controller: usernameController,
                 textCapitalization: TextCapitalization.none,
+                textInputAction: TextInputAction.next,
                 decoration: const InputDecoration(labelText: 'Username', prefixIcon: Icon(Icons.person_rounded)),
               ),
               const SizedBox(height: 12),
@@ -23493,6 +23505,8 @@ class _MultiDeviceSyncScreenState extends State<MultiDeviceSyncScreen> {
                 onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                 controller: passwordController,
                 obscureText: obscure,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => Navigator.pop(dialogContext, true),
                 decoration: InputDecoration(
                   labelText: 'Password',
                   prefixIcon: const Icon(Icons.lock_rounded),
@@ -23803,6 +23817,8 @@ class _MultiDeviceSyncScreenState extends State<MultiDeviceSyncScreen> {
                             controller: _workerUrlController,
                             readOnly: busy,
                             keyboardType: TextInputType.url,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _saveSyncEndpoint(),
                             autocorrect: false,
                             enableSuggestions: false,
                             onChanged: (_) => setState(() {}),
@@ -23902,6 +23918,7 @@ class _MultiDeviceSyncScreenState extends State<MultiDeviceSyncScreen> {
               onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               controller: _usernameController,
               readOnly: busy || signedIn,
+              textInputAction: TextInputAction.next,
               keyboardType: TextInputType.text,
               autocorrect: false,
               enableSuggestions: false,
@@ -23914,6 +23931,8 @@ class _MultiDeviceSyncScreenState extends State<MultiDeviceSyncScreen> {
                 onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                 controller: _passwordController,
                 readOnly: busy,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _login(register: _registerMode),
                 obscureText: _obscurePassword,
                 decoration: InputDecoration(
                   labelText: 'Password',

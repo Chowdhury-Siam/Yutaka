@@ -32,6 +32,12 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1287" date="2026-10-11">
+      <description><p>Keep first-login setup available and support keyboard submission in account forms.</p></description>
+    </release>
+    <release version="1.0.1286" date="2026-10-11">
+      <description><p>Simplify existing-loan setup and align its action buttons.</p></description>
+    </release>
     <release version="1.0.1285" date="2026-10-11">
       <description><p>Add existing-loan setup without changing current account balances.</p></description>
     </release>

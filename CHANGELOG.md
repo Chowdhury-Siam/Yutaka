@@ -1,3 +1,17 @@
+## 1.0.1287+331
+
+- Keep first-run setup available after login to a new or unfinished account, including accounts created in the administrator portal.
+- Synchronize completed setup status and keep unfinished devices from undoing it; use finance data to recognize returning legacy accounts.
+- Preserve pending setup after restart and defer automatic uploads until the initial setup choice.
+- Support Enter to validate the Worker URL and submit login, registration and add-account forms, with busy-state guards.
+- Add setup-status and desktop keyboard regressions; preserve the previous loan setup layout fix.
+
+## 1.0.1286+330
+
+- Remove the detailed double-counting explanation card from existing-loan setup.
+- Stack the two loan actions at equal widths with matching spacing and center Skip loans below them.
+- Synchronize release metadata and preserve existing-loan balance handling.
+
 ## 1.0.1285+329
 
 - Add an optional existing-loans step after account setup, explain current balances and outstanding debt, and prevent opening loans from changing account money.
