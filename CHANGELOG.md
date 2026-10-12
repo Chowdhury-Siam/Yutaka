@@ -1,3 +1,8 @@
+## Deployment video build configuration cleanup (1.0.1290+334)
+
+- Accept `YUTAKA_DEPLOYMENT_VIDEO_URL` from repository Variables or Secrets in all platform builds, with a non-empty variable taking priority. Existing video secrets no longer produce an empty app configuration.
+- Extend the build-wiring regression and document rebuilding/reinstalling after configuration changes. Keep app and Worker versions unchanged for this workflow-only fix.
+
 ## 1.0.1290+334
 
 - Show a centered README / YouTube / Skip popup for first-time Deploy Database visitors after saved deployment state loads. Recognize existing validated/saved Workers and credentials, and retain successful deployment history even when automatic updates are disabled or credentials are removed.

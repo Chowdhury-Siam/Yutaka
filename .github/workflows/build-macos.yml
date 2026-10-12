@@ -287,7 +287,7 @@ jobs:
       - name: Build universal macOS release
         env:
           COMPILER_INDEX_STORE_ENABLE: "NO"
-          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL }}
+          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL || secrets.YUTAKA_DEPLOYMENT_VIDEO_URL }}
         run: |
           flutter build macos --release --no-pub --no-tree-shake-icons \
             --dart-define=YUTAKA_APP_VERSION="$YUTAKA_APP_VERSION_NAME" \

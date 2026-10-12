@@ -601,7 +601,7 @@ jobs:
       - name: Build ${{ matrix.label }}
         shell: bash
         env:
-          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL }}
+          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL || secrets.YUTAKA_DEPLOYMENT_VIDEO_URL }}
         run: |
           if [ "${{ matrix.package }}" = "aab" ]; then
             flutter build appbundle \

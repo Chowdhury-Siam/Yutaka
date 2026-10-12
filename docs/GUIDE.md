@@ -144,7 +144,7 @@ The full beginner-friendly deployment guide is below.
 
 First-time visitors to **Deploy Database** see a centered guidance popup with **Read README**, **Watch YouTube**, and **Skip**. It appears only when the app has no known deployment. Saved credentials, validated/saved Workers, and a successful deployment on this device suppress it; removing deployment credentials does not erase that completion marker. Skip applies to the current visit only.
 
-Repository maintainers can configure the video using the GitHub Actions variable `YUTAKA_DEPLOYMENT_VIDEO_URL`. See [the README](../README.md#deployment-walkthrough-video) for setup and local-build instructions.
+Repository maintainers can configure the video using the GitHub Actions variable `YUTAKA_DEPLOYMENT_VIDEO_URL`, or an existing repository secret with the same name. A non-empty variable takes priority. Rebuild and install the new package after changing the configuration. See [the README](../README.md#deployment-walkthrough-video) for setup and local-build instructions.
 
 Self-hosted sync is optional. It is only needed if you want your Yutaka data synchronized through your own backend.
 

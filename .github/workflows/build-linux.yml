@@ -230,7 +230,7 @@ jobs:
       - name: Build Linux release
         shell: bash
         env:
-          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL }}
+          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL || secrets.YUTAKA_DEPLOYMENT_VIDEO_URL }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/build-logs

@@ -266,6 +266,8 @@ See the [Worker guide](cloud/worker/README.md) for database setup.
 
 Add a GitHub Actions **repository variable** named `YUTAKA_DEPLOYMENT_VIDEO_URL` under **Settings → Secrets and variables → Actions → Variables**. Set it to your HTTPS YouTube video URL, then run the platform builds. Android (direct and Play), Windows, Linux (including its Flatpak payload), and macOS embed the value in the app.
 
+If you already saved `YUTAKA_DEPLOYMENT_VIDEO_URL` under **Secrets**, the builds also accept that value. A non-empty repository variable takes priority over the secret. After changing the link or workflow, rebuild and install the new package; installed apps retain the URL embedded when they were built.
+
 If the variable is empty or is not an HTTPS YouTube URL, **Watch YouTube** is disabled with an availability message. README and Skip remain available. Changing the variable takes effect in newly built apps.
 
 For a local build, pass `--dart-define=YUTAKA_DEPLOYMENT_VIDEO_URL=https://youtu.be/YOUR_VIDEO_ID` alongside your normal build flags.

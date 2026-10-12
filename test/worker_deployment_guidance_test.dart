@@ -164,6 +164,7 @@ void main() {
     for (final platform in ['android-apks', 'windows', 'linux', 'macos']) {
       final workflow = File('.github/workflows/build-$platform.yml').readAsStringSync();
       expect(workflow, contains(r'vars.YUTAKA_DEPLOYMENT_VIDEO_URL'));
+      expect(workflow, contains(r'vars.YUTAKA_DEPLOYMENT_VIDEO_URL || secrets.YUTAKA_DEPLOYMENT_VIDEO_URL'));
       expect(workflow, contains('--dart-define=YUTAKA_DEPLOYMENT_VIDEO_URL='));
     }
     final android = File('.github/workflows/build-android-apks.yml').readAsStringSync();

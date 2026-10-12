@@ -296,7 +296,7 @@ jobs:
 
       - name: Build Windows release
         env:
-          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL }}
+          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL || secrets.YUTAKA_DEPLOYMENT_VIDEO_URL }}
         run: |
           $env:CMAKE_BUILD_PARALLEL_LEVEL = "$env:NUMBER_OF_PROCESSORS"
           $env:CMAKE_POLICY_VERSION_MINIMUM = "3.5"
