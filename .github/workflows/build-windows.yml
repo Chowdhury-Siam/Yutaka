@@ -295,11 +295,13 @@ jobs:
         run: python tools/ci/native_input_timestamps.py restore --platform windows --manifest .ci-cache/native-inputs-windows.json
 
       - name: Build Windows release
+        env:
+          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL }}
         run: |
           $env:CMAKE_BUILD_PARALLEL_LEVEL = "$env:NUMBER_OF_PROCESSORS"
           $env:CMAKE_POLICY_VERSION_MINIMUM = "3.5"
           $env:CL = "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
-          flutter build windows --release --no-pub --dart-define=YUTAKA_APP_VERSION="$env:YUTAKA_APP_VERSION_NAME"
+          flutter build windows --release --no-pub --dart-define=YUTAKA_APP_VERSION="$env:YUTAKA_APP_VERSION_NAME" --dart-define=YUTAKA_DEPLOYMENT_VIDEO_URL="$env:YUTAKA_DEPLOYMENT_VIDEO_URL"
 
       - name: Normalize Windows release executable name
         shell: pwsh

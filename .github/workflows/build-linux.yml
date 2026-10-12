@@ -229,11 +229,14 @@ jobs:
 
       - name: Build Linux release
         shell: bash
+        env:
+          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/build-logs
           flutter build linux --release --no-pub \
             --verbose --dart-define=YUTAKA_APP_VERSION="$YUTAKA_APP_VERSION_NAME" \
+            --dart-define=YUTAKA_DEPLOYMENT_VIDEO_URL="$YUTAKA_DEPLOYMENT_VIDEO_URL" \
             2>&1 | tee artifacts/build-logs/flutter-linux.log
 
       - name: Upload Linux build failure details

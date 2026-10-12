@@ -33,7 +33,22 @@ const String kSleekAccentHex = '#00BD91';
 const String kLegacyStarterCashIconHex = '#78D8E8';
 
 const appTitle = 'Yutaka';
-const appVersion = String.fromEnvironment('YUTAKA_APP_VERSION', defaultValue: '1.0.1289');
+const appVersion = String.fromEnvironment('YUTAKA_APP_VERSION', defaultValue: '1.0.1290');
+const kWorkerDeploymentCompletedPreferenceKey = 'workerDeploymentCompleted';
+const kWorkerDeploymentReadmeUrl = 'https://github.com/Chowdhury-Siam/Yutaka/blob/main/README.md#self-hosted-sync';
+const kWorkerDeploymentVideoUrl = String.fromEnvironment('YUTAKA_DEPLOYMENT_VIDEO_URL');
+const _workerDeploymentVideoHosts = {'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'};
+
+Uri? workerDeploymentVideoUri(String value) {
+  final uri = Uri.tryParse(value.trim());
+  if (uri == null || uri.scheme != 'https' || uri.userInfo.isNotEmpty ||
+      (uri.hasPort && uri.port != 443) || uri.path.isEmpty || uri.path == '/' ||
+      !_workerDeploymentVideoHosts.contains(uri.host.toLowerCase())) {
+    return null;
+  }
+  return uri;
+}
+
 const kAndroidDistribution = appFlavor ?? String.fromEnvironment('YUTAKA_ANDROID_DISTRIBUTION', defaultValue: 'direct');
 const bool kIsGooglePlayBuild = kAndroidDistribution == 'play';
 const kLinuxDistribution = String.fromEnvironment('YUTAKA_LINUX_DISTRIBUTION', defaultValue: 'direct');

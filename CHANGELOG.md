@@ -1,3 +1,14 @@
+## 1.0.1290+334
+
+- Show a centered README / YouTube / Skip popup for first-time Deploy Database visitors after saved deployment state loads. Recognize existing validated/saved Workers and credentials, and retain successful deployment history even when automatic updates are disabled or credentials are removed.
+- Embed the `YUTAKA_DEPLOYMENT_VIDEO_URL` GitHub Actions repository variable in every platform build. Accept HTTPS YouTube links and gracefully disable the video action when a walkthrough is not configured.
+- Add guidance, dismissal, existing-deployment, URL-validation and release-wiring regressions. Synchronize release metadata while preserving transaction-save and README fixes.
+
+## README mobile layout cleanup (1.0.1289+333)
+
+- Replace the fixed two-column HTML feature table with full-width Markdown sections so descriptions wrap naturally on phones and heading links no longer protrude from table cells.
+- Preserve all eight feature descriptions, the banner, badges, and detailed guide. Keep app and Worker versions unchanged.
+
 ## README presentation refresh (1.0.1289+333)
 
 - Replace the README banner with Yutaka branding, a green ribbon motif, and platform labels; reorganize the introduction, badges, feature grid, installation, settings, development, publishing, and troubleshooting sections.

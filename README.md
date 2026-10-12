@@ -60,48 +60,37 @@ Start with your current account balances, add existing loans without changing th
 
 ## 💎 Your Money, in One Place
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>💳 Accounts & Transactions</h3>
-      <p>Track multiple accounts, income, expenses, and transfers. Add titles, notes, optional service charges, and date or time ranges; search and sort your history.</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>📊 Budgets & Analysis</h3>
-      <p>Set monthly budgets and follow spending, income, cash flow, and net results with charts and category breakdowns.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>🤝 Lending & Borrowing</h3>
-      <p>Record existing debt or new loans, repayments, additional lending, interest, and due dates with a dated timeline.</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>🗓️ Plans & Subscriptions</h3>
-      <p>Plan purchases with reminders, turn a purchase into an expense, and record recurring subscriptions automatically or with Add now.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>📝 Notes That Stay with You</h3>
-      <p>Keep formatted notes with automatic saving and bookmarks. Notes participate in backups and optional multi-device sync.</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>📄 Reports in Your Format</h3>
-      <p>Export date-filtered summaries or transaction history as PDF, XLSX, or TXT. Send reports to Telegram or Google Drive through your Worker.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>💾 Backup & Restore</h3>
-      <p>Create portable backup files, schedule local backups, and merge restored records with your current data. Equivalent categories are reconciled.</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>☁️ Sync on Your Own Server</h3>
-      <p>Connect your own Worker for realtime foreground sync, account administration, and optional scheduled cloud delivery.</p>
-    </td>
-  </tr>
-</table>
+### 💳 Accounts & Transactions
+
+Track multiple accounts, income, expenses, and transfers. Add titles, notes, optional service charges, and date or time ranges; search and sort your history.
+
+### 📊 Budgets & Analysis
+
+Set monthly budgets and follow spending, income, cash flow, and net results with charts and category breakdowns.
+
+### 🤝 Lending & Borrowing
+
+Record existing debt or new loans, repayments, additional lending, interest, and due dates with a dated timeline.
+
+### 🗓️ Plans & Subscriptions
+
+Plan purchases with reminders, turn a purchase into an expense, and record recurring subscriptions automatically or with Add now.
+
+### 📝 Notes That Stay with You
+
+Keep formatted notes with automatic saving and bookmarks. Notes participate in backups and optional multi-device sync.
+
+### 📄 Reports in Your Format
+
+Export date-filtered summaries or transaction history as PDF, XLSX, or TXT. Send reports to Telegram or Google Drive through your Worker.
+
+### 💾 Backup & Restore
+
+Create portable backup files, schedule local backups, and merge restored records with your current data. Equivalent categories are reconciled.
+
+### ☁️ Sync on Your Own Server
+
+Connect your own Worker for realtime foreground sync, account administration, and optional scheduled cloud delivery.
 
 ### Everyday details
 
@@ -179,6 +168,8 @@ For an existing loan, enter the amount **still owed today**. Future repayments a
 ## ☁️ Self-Hosted Sync
 
 Sync uses **your Cloudflare Worker and Turso database**. Yutaka does not provide a default shared sync service.
+
+When you first open **Deploy Database**, a centered popup offers **Read README**, **Watch YouTube**, or **Skip**. Existing deployments are recognized through saved credentials, validated Workers, saved Worker profiles, or a completed deployment on this device. Skip closes the popup for that visit; it does not mark a deployment as completed.
 
 1. Open **Settings → Account & sync → Deploy Database**, or deploy from your fork using GitHub Actions.
 2. Follow the [deployment guide](docs/GUIDE.md#deploy-your-self-hosted-worker) to prepare your Cloudflare token, Account ID, database URL, database token, Worker name, and JWT secret.
@@ -270,6 +261,14 @@ See the [Worker guide](cloud/worker/README.md) for database setup.
 <a id="publishing"></a>
 
 ## 📦 Publishing
+
+### Deployment walkthrough video
+
+Add a GitHub Actions **repository variable** named `YUTAKA_DEPLOYMENT_VIDEO_URL` under **Settings → Secrets and variables → Actions → Variables**. Set it to your HTTPS YouTube video URL, then run the platform builds. Android (direct and Play), Windows, Linux (including its Flatpak payload), and macOS embed the value in the app.
+
+If the variable is empty or is not an HTTPS YouTube URL, **Watch YouTube** is disabled with an availability message. README and Skip remain available. Changing the variable takes effect in newly built apps.
+
+For a local build, pass `--dart-define=YUTAKA_DEPLOYMENT_VIDEO_URL=https://youtu.be/YOUR_VIDEO_ID` alongside your normal build flags.
 
 GitHub Actions builds Android, Windows, Linux, and macOS packages. The canonical repository's **Publish Stable Release** workflow gathers successful platform builds for the same commit before publishing the stable release.
 

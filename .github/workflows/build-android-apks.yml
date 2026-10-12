@@ -600,6 +600,8 @@ jobs:
       # whose merged manifest is checked to ensure sideload-update capability is absent.
       - name: Build ${{ matrix.label }}
         shell: bash
+        env:
+          YUTAKA_DEPLOYMENT_VIDEO_URL: ${{ vars.YUTAKA_DEPLOYMENT_VIDEO_URL }}
         run: |
           if [ "${{ matrix.package }}" = "aab" ]; then
             flutter build appbundle \
@@ -610,6 +612,7 @@ jobs:
               --no-pub \
               --no-tree-shake-icons \
               --dart-define=YUTAKA_APP_VERSION="$YUTAKA_APP_VERSION_NAME" \
+              --dart-define=YUTAKA_DEPLOYMENT_VIDEO_URL="$YUTAKA_DEPLOYMENT_VIDEO_URL" \
               --dart-define=YUTAKA_ANDROID_DISTRIBUTION=play
             PLAY_MANIFEST="$(find build/app/intermediates -type f -path '*playRelease*' -name AndroidManifest.xml -print -quit)"
             if [ -z "$PLAY_MANIFEST" ]; then
@@ -645,6 +648,7 @@ jobs:
               --no-pub \
               --no-tree-shake-icons \
               --dart-define=YUTAKA_APP_VERSION="$YUTAKA_APP_VERSION_NAME" \
+              --dart-define=YUTAKA_DEPLOYMENT_VIDEO_URL="$YUTAKA_DEPLOYMENT_VIDEO_URL" \
               --dart-define=YUTAKA_ANDROID_DISTRIBUTION=direct
             case "${{ matrix.variant }}" in
               universal) expected_apk="app-direct-release.apk" ;;

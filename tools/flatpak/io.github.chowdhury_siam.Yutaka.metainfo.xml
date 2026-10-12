@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1290" date="2026-10-12">
+      <description><p>Offer a README or video walkthrough before first-time database deployment.</p></description>
+    </release>
     <release version="1.0.1289" date="2026-10-11">
       <description><p>Commit transaction saves atomically and prevent duplicate submissions of the same draft.</p></description>
     </release>

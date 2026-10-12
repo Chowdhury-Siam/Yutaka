@@ -22699,14 +22699,17 @@ class _LinkedSegmentsText extends StatelessWidget {
 
 
 class WorkerDeploymentScreen extends StatefulWidget {
-  const WorkerDeploymentScreen({super.key});
+  const WorkerDeploymentScreen({super.key, this.credentialStore, this.videoUrl = kWorkerDeploymentVideoUrl});
+
+  final WorkerDeploymentCredentialStore? credentialStore;
+  final String videoUrl;
 
   @override
   State<WorkerDeploymentScreen> createState() => _WorkerDeploymentScreenState();
 }
 
 class _WorkerDeploymentScreenState extends State<WorkerDeploymentScreen> {
-  final _credentialStore = WorkerDeploymentCredentialStore();
+  late final _credentialStore = widget.credentialStore ?? WorkerDeploymentCredentialStore();
   final _workerNameController = TextEditingController();
   final _accountIdController = TextEditingController();
   final _cloudflareTokenController = TextEditingController();
@@ -22731,7 +22734,12 @@ class _WorkerDeploymentScreenState extends State<WorkerDeploymentScreen> {
   }
 
   Future<void> _loadSavedDeployment() async {
-    final profile = await _credentialStore.read(workerUrl: context.read<AppController>().selfHostedSyncApiBaseUrl);
+    final state = context.read<AppController>();
+    final profile = await _credentialStore.read(workerUrl: state.selfHostedSyncApiBaseUrl);
+    var completed = false;
+    try {
+      completed = await state.prefs.getBool(kWorkerDeploymentCompletedPreferenceKey, false);
+    } catch (_) {}
     if (!mounted) return;
     if (profile != null) {
       _savedDeployment = profile;
@@ -22743,6 +22751,72 @@ class _WorkerDeploymentScreenState extends State<WorkerDeploymentScreen> {
       _jwtSecretController.text = profile.jwtSecret;
     }
     setState(() => _loadingSavedDeployment = false);
+    final hasDeployment = completed || profile != null || state.savedSyncWorkers.isNotEmpty ||
+        (state.selfHostedSyncEndpointValidated && state.selfHostedSyncApiBaseUrl.trim().isNotEmpty);
+    if (hasDeployment) {
+      // Backfill existing installations, including externally deployed Workers.
+      if (!completed) {
+        try {
+          await state.prefs.setBool(kWorkerDeploymentCompletedPreferenceKey, true);
+        } catch (_) {}
+      }
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        unawaited(_showDeploymentGuide());
+      }
+    });
+  }
+
+  Future<void> _showDeploymentGuide() async {
+    final video = workerDeploymentVideoUri(widget.videoUrl);
+    final choice = await showYutakaPopup<String>(
+      context,
+      maxWidth: 480,
+      maxHeight: 460,
+      child: Builder(builder: (popupContext) => YutakaPopupContent(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Icon(Icons.menu_book_rounded, size: 40, color: kSleekAccent),
+            const SizedBox(height: 14),
+            Text('Before you deploy', textAlign: TextAlign.center,
+              style: Theme.of(popupContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 10),
+            const Text('Read the README or watch the YouTube walkthrough to prepare your Cloudflare and database values.',
+              textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(popupContext, 'readme'),
+              icon: const Icon(Icons.menu_book_rounded),
+              label: const Text('Read README'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: video == null ? null : () => Navigator.pop(popupContext, 'video'),
+              icon: const Icon(Icons.play_circle_outline_rounded),
+              label: const Text('Watch YouTube'),
+            ),
+            if (video == null) ...[
+              const SizedBox(height: 6),
+              Text('Video guide is not available in this build.', textAlign: TextAlign.center,
+                style: Theme.of(popupContext).textTheme.bodySmall),
+            ],
+            const SizedBox(height: 10),
+            TextButton(onPressed: () => Navigator.pop(popupContext), child: const Text('Skip')),
+          ],
+        ),
+      )),
+    );
+    if (!mounted) return;
+    if (choice == 'readme') {
+      await _launchSetupLink(kWorkerDeploymentReadmeUrl);
+    } else if (choice == 'video' && video != null) {
+      await _launchSetupLink(video.toString());
+    }
   }
 
   Future<void> _setAutoUpdateEnabled(bool value) async {
@@ -22807,8 +22881,12 @@ class _WorkerDeploymentScreenState extends State<WorkerDeploymentScreen> {
   }
 
   Future<void> _launchSetupLink(String url) async {
-    final opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    if (!opened && mounted) showSnack(context, 'Could not open the setup page.');
+    try {
+      final opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!opened && mounted) showSnack(context, 'Could not open the setup page.');
+    } catch (_) {
+      if (mounted) showSnack(context, 'Could not open the setup page.');
+    }
   }
 
   Widget _secretField({
@@ -22842,6 +22920,8 @@ class _WorkerDeploymentScreenState extends State<WorkerDeploymentScreen> {
   }
 
   Future<void> _deploy() async {
+    if (_deploying || _loadingSavedDeployment) return;
+    final state = context.read<AppController>();
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _deploying = true;
@@ -22869,6 +22949,10 @@ class _WorkerDeploymentScreenState extends State<WorkerDeploymentScreen> {
           });
         },
       );
+      // A successful deployment stays recognized even without saved credentials.
+      try {
+        await state.prefs.setBool(kWorkerDeploymentCompletedPreferenceKey, true);
+      } catch (_) {}
       final profile = WorkerDeploymentProfile(
         workerName: _workerNameController.text.trim().toLowerCase(),
         cloudflareAccountId: _accountIdController.text.trim(),
@@ -23089,7 +23173,7 @@ class _WorkerDeploymentScreenState extends State<WorkerDeploymentScreen> {
             ],
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _deploying ? null : _deploy,
+              onPressed: _deploying || _loadingSavedDeployment ? null : _deploy,
               icon: _deploying ? const YutakaInlineLoader(size: 18) : const Icon(Icons.rocket_launch_rounded),
               label: Text(_deploying ? 'Deploying…' : 'Deploy Worker'),
             ),
