@@ -32,6 +32,12 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1297" date="2026-10-14">
+      <description><p>Add a website-styled Worker welcome page and smoother calculator keys with haptic feedback.</p></description>
+    </release>
+    <release version="1.0.1296" date="2026-10-14">
+      <description><p>Keep the current page open when holding Home to use the calculator.</p></description>
+    </release>
     <release version="1.0.1295" date="2026-10-14">
       <description><p>Open the calculator by holding Home instead of tapping three times.</p></description>
     </release>

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:yutaka/app_config.dart';
 import 'package:yutaka/main.dart';
+import 'package:yutaka/ui_foundation.dart';
 
 class CalculatorTestController extends AppController {
   @override
@@ -35,7 +36,7 @@ void main() {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(MaterialApp(
-      theme: ThemeData(useMaterial3: true),
+      theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
         child: child!,
@@ -53,7 +54,7 @@ void main() {
   }
 
   for (final width in [360.0, 1000.0, 1280.0]) {
-    testWidgets('holding Home opens one popup at width $width', (tester) async {
+    testWidgets('holding Home opens one popup without changing tabs at width $width', (tester) async {
       final controller = CalculatorTestController()..updateLastCheckedAt = DateTime.now();
       await tester.binding.setSurfaceSize(Size(width, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -83,12 +84,17 @@ void main() {
       await tester.longPress(homeIcon());
       await finishMotion(tester);
       expect(find.byType(CalculatorPopup), findsOneWidget);
-      expect(controller.tabIndex, kHomeTabIndex);
-      // Android/system Back dismisses the modal without leaving Home.
+      expect(controller.tabIndex, kCategoriesTabIndex);
+      // Android/system Back dismisses the modal without leaving the current page.
       await tester.binding.handlePopRoute();
       await finishMotion(tester);
       expect(find.byType(CalculatorPopup), findsNothing);
+      expect(controller.tabIndex, kCategoriesTabIndex);
+      // A short tap still navigates to Home normally.
+      await tester.tap(homeIcon());
+      await finishMotion(tester);
       expect(controller.tabIndex, kHomeTabIndex);
+      expect(find.byType(CalculatorPopup), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
@@ -164,6 +170,25 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byType(CalculatorPopup), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('keypad has spring feedback and each key vibrates once', (tester) async {
+    final haptics = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'HapticFeedback.vibrate') {
+        haptics.add(call);
+      }
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await openPopup(tester, const Size(360, 800));
+    final seven = find.widgetWithText(FilledButton, '7');
+    expect(find.ancestor(of: seven, matching: find.byType(MotionTouchFeedback)), findsOneWidget);
+    await press(tester, ['7', '+', '3', '=']);
+    expect(result(tester), '10');
+    expect(haptics, hasLength(4));
+    expect(haptics.every((call) => call.arguments == 'HapticFeedbackType.selectionClick'), isTrue);
     expect(tester.takeException(), isNull);
   });
 

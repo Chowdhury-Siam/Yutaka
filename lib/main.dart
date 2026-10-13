@@ -8620,11 +8620,6 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
     await Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
   }
 
-  void _openHomeCalculator() {
-    context.read<AppController>().selectTabIndex(kHomeTabIndex);
-    unawaited(_openCalculator());
-  }
-
   Future<void> _openCalculator() async {
     if (_calculatorOpen) {
       return;
@@ -8715,7 +8710,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
                   selectedIndex: tabIndex,
                   extended: extendDesktopNavigation,
                   onSelected: selectTab,
-                  onHomeLongPress: _openHomeCalculator,
+                  onHomeLongPress: _openCalculator,
                 ),
               Expanded(
                 child: AnimatedSwitcher(
@@ -8890,7 +8885,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
                               child: _FloatingDockNavigation(
                                 selectedIndex: tabIndex,
                                 onSelected: selectTab,
-                                onHomeLongPress: _openHomeCalculator,
+                                onHomeLongPress: _openCalculator,
                               ),
                               builder: (context, child) {
                                 final t = _transactionMenuController.value;

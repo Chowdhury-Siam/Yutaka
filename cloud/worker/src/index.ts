@@ -1,6 +1,7 @@
 import { createClient, type Client } from '@libsql/client/web';
 import { profilePage } from './profile.ts';
 import { deleteAccountPage } from './delete_account.ts';
+import { workerLandingPage } from './landing.ts';
 
 type Env = {
   TURSO_DATABASE_URL: string;
@@ -135,7 +136,7 @@ export async function handleRequest(
         return await deleteAccountPortal(request, env, connect);
       }
       if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }));
-      if (request.method === 'GET' && url.pathname === '/') return rootResponse(env);
+      if (request.method === 'GET' && url.pathname === '/') return rootResponse(request, env);
       if (request.method === 'GET' && url.pathname === '/health') return healthResponse(env);
 
       validateWorkerConfig(env);
@@ -3222,7 +3223,27 @@ function safeTelegramError(error: unknown): string {
 }
 
 
-function rootResponse(env: Env): Response {
+function rootResponse(request: Request, env: Env): Response {
+  const url = new URL(request.url);
+  if ((request.headers.get('accept') ?? '').includes('text/html') && url.searchParams.get('format') !== 'json') {
+    const nonce = b64urlBytes(crypto.getRandomValues(new Uint8Array(18)));
+    return new Response(workerLandingPage({
+      configured: isWorkerConfigured(env),
+      version: env.YUTAKA_WORKER_VERSION ?? 'legacy',
+      origin: url.origin,
+      nonce,
+    }), {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'vary': 'Accept',
+        'x-content-type-options': 'nosniff',
+        'x-frame-options': 'DENY',
+        'referrer-policy': 'no-referrer',
+        'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      },
+    });
+  }
   return json({
     ok: true,
     service: 'yutaka-sync',

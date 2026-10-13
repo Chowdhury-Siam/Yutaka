@@ -1,3 +1,14 @@
+## 1.0.1297+341
+
+- Replace raw JSON at the Worker root in browser visits with a Yutaka website-styled welcome page, including the original website logo, dark green colors, typography, administration links, address copying, and an inline connection check. Keep JSON for API clients and explicit ?format=json requests.
+- Add spring press/release feedback and light native vibration to calculator keys while keeping calculations immediate and long-press Home on the current page.
+- Add Worker landing-page and calculator haptic regression coverage. Synchronize app and Worker versions and rebuild the embedded deployment bundle.
+
+## 1.0.1296+340
+
+- Holding Home now opens the calculator over the current page without navigating to Home. Closing the popup returns to the same page; normal Home taps still navigate normally. Apply this behavior to the mobile dock and both desktop navigation layouts.
+- Update the gesture regressions and app metadata; keep Worker version 1.0.1290 unchanged.
+
 ## 1.0.1295+339
 
 - Replace the three-tap Home shortcut with a native press-and-hold gesture in the phone dock and both desktop navigation layouts. Normal Home taps only navigate; holding Home returns to Home and opens the same centered calculator popup.

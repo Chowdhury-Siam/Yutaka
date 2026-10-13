@@ -59,6 +59,10 @@ class _CalculatorPopupState extends State<CalculatorPopup> {
   }
 
   void _press(String key) {
+    final platform = Theme.of(context).platform;
+    if (platform == TargetPlatform.android || platform == TargetPlatform.iOS) {
+      unawaited(HapticFeedback.selectionClick());
+    }
     setState(() {
       if (key == 'AC') {
         _clear();
@@ -220,20 +224,23 @@ class _CalculatorPopupState extends State<CalculatorPopup> {
                           excludeSemantics: true,
                           button: true,
                           onTap: () => _press(key),
-                          child: FilledButton(
-                            onPressed: () => _press(key),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: key == '=' ? scheme.primary
-                                  : '+−×÷'.contains(key) ? scheme.primaryContainer
-                                  : scheme.surfaceContainerHighest,
-                              foregroundColor: key == '=' ? scheme.onPrimary
-                                  : '+−×÷'.contains(key) ? scheme.onPrimaryContainer
-                                  : scheme.onSurface,
-                              minimumSize: const Size(48, 52),
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                          child: MotionTouchFeedback(
+                            scale: .95,
+                            child: FilledButton(
+                              onPressed: () => _press(key),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: key == '=' ? scheme.primary
+                                    : '+−×÷'.contains(key) ? scheme.primaryContainer
+                                    : scheme.surfaceContainerHighest,
+                                foregroundColor: key == '=' ? scheme.onPrimary
+                                    : '+−×÷'.contains(key) ? scheme.onPrimaryContainer
+                                    : scheme.onSurface,
+                                minimumSize: const Size(48, 52),
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                              ),
+                              child: FittedBox(child: Text(key, style: const TextStyle(fontSize: 22))),
                             ),
-                            child: FittedBox(child: Text(key, style: const TextStyle(fontSize: 22))),
                           ),
                         ),
                       ),
