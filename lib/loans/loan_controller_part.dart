@@ -491,6 +491,7 @@ extension LoanControllerActions on AppController {
 
   Future<void> setLoanPreferences({
     bool? recordTransactions,
+    bool? showTypeOptions,
     bool? reminders,
     bool? showWrittenOff,
     bool? showTransactionsInTransactionList,
@@ -498,6 +499,10 @@ extension LoanControllerActions on AppController {
     if (recordTransactions != null) {
       loanRecordTransactionsByDefault = recordTransactions;
       await prefs.setBool('loanRecordTransactionsByDefault', recordTransactions);
+    }
+    if (showTypeOptions != null) {
+      loanShowTypeOptions = showTypeOptions;
+      await prefs.setBool('loanShowTypeOptions', showTypeOptions);
     }
     if (reminders != null) {
       loanRemindersEnabled = reminders;

@@ -68,6 +68,7 @@ part 'loans/loan_sheets.dart';
 part 'profile/profile_ui.dart';
 part 'profile/worker_profile_ui.dart';
 part 'analytics/analytics.dart';
+part 'calculator_popup.dart';
 
 const _uuid = Uuid();
 bool _privacyTelemetryRuntimeEnabled = false;
@@ -2327,6 +2328,7 @@ class AppController extends ChangeNotifier {
   bool reminderEnabled = false;
   TimeOfDay reminderTime = const TimeOfDay(hour: 21, minute: 0);
   bool loanRecordTransactionsByDefault = true;
+  bool loanShowTypeOptions = true;
   bool loanRemindersEnabled = true;
   bool loanShowWrittenOff = false;
   bool loanTransactionsVisibleInTransactionList = true;
@@ -2896,6 +2898,7 @@ class AppController extends ChangeNotifier {
       await ReminderService.scheduleDaily(reminderTime);
     }
     loanRecordTransactionsByDefault = await prefs.getBool('loanRecordTransactionsByDefault', true);
+    loanShowTypeOptions = await prefs.getBool('loanShowTypeOptions', true);
     loanRemindersEnabled = await prefs.getBool('loanRemindersEnabled', true);
     loanShowWrittenOff = await prefs.getBool('loanShowWrittenOff', false);
     loanTransactionsVisibleInTransactionList = await prefs.getBool('loanTransactionsVisibleInTransactionList', true);
@@ -3585,6 +3588,7 @@ class AppController extends ChangeNotifier {
         'reminderHour': reminderTime.hour,
         'reminderMinute': reminderTime.minute,
         'loanRecordTransactionsByDefault': loanRecordTransactionsByDefault,
+        'loanShowTypeOptions': loanShowTypeOptions,
         'loanRemindersEnabled': loanRemindersEnabled,
         'loanShowWrittenOff': loanShowWrittenOff,
         'loanTransactionsVisibleInTransactionList': loanTransactionsVisibleInTransactionList,
@@ -5875,6 +5879,7 @@ class AppController extends ChangeNotifier {
     await sp.setInt('reminderHour', 21);
     await sp.setInt('reminderMinute', 0);
     await sp.setBool('loanRecordTransactionsByDefault', true);
+    await sp.setBool('loanShowTypeOptions', true);
     await sp.setBool('loanRemindersEnabled', true);
     await sp.setBool('loanShowWrittenOff', false);
     await sp.setBool('loanTransactionsVisibleInTransactionList', true);
@@ -8450,6 +8455,9 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
   bool _automaticUpdateCheckInFlight = false;
   Timer? _automaticUpdateRetryTimer;
   Timer? _subscriptionSweepTimer;
+  Timer? _homeTapResetTimer;
+  int _homeTapCount = 0;
+  bool _calculatorOpen = false;
   late final AnimationController _transactionMenuController;
 
   @override
@@ -8477,6 +8485,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
   void dispose() {
     _automaticUpdateRetryTimer?.cancel();
     _subscriptionSweepTimer?.cancel();
+    _homeTapResetTimer?.cancel();
     _transactionMenuController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -8484,6 +8493,9 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      _resetHomeTaps();
+    }
     if (state == AppLifecycleState.resumed) {
       final controller = context.read<AppController>();
       unawaited(controller.resumeUpdateInstallation());
@@ -8614,6 +8626,45 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
     await Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
   }
 
+  void _resetHomeTaps() {
+    _homeTapResetTimer?.cancel();
+    _homeTapCount = 0;
+  }
+
+  void _recordHomeTap(int index) {
+    if (index != kHomeTabIndex || _calculatorOpen) {
+      _resetHomeTaps();
+      return;
+    }
+    _homeTapResetTimer?.cancel();
+    if (++_homeTapCount == 3) {
+      _resetHomeTaps();
+      unawaited(_openCalculator());
+    } else {
+      _homeTapResetTimer = Timer(const Duration(seconds: 2), _resetHomeTaps);
+    }
+  }
+
+  Future<void> _openCalculator() async {
+    if (_calculatorOpen) {
+      return;
+    }
+    _resetHomeTaps();
+    _closeTransactionMenu();
+    _calculatorOpen = true;
+    AppMotion.actionHaptic(context);
+    try {
+      await showYutakaPopup<void>(
+        context,
+        maxWidth: 380,
+        maxHeight: 560,
+        child: const CalculatorPopup(),
+      );
+    } finally {
+      _calculatorOpen = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final requestedTabIndex = context.select<AppController, int>((state) => state.tabIndex);
@@ -8653,7 +8704,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
             child: FloatingActionButton(
               heroTag: 'transactionMenuFab',
               onPressed: _toggleTransactionMenu,
-              tooltip: 'Note, plan, and subscriptions',
+              tooltip: 'Note, plan, subscriptions, and calculator',
               child: AnimatedIcon(
                 icon: AnimatedIcons.menu_close,
                 progress: _transactionMenuController,
@@ -8670,6 +8721,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
         final extendDesktopNavigation = constraints.maxWidth >= 1180;
 
         void selectTab(int index) {
+          _recordHomeTap(index);
           if (index == tabIndex) return;
           _closeTransactionMenu();
           AppMotion.selectionHaptic(context);
@@ -8739,7 +8791,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
                                 final raw = _transactionMenuController.value;
 
                                 // The quick menu intentionally uses non-overlapping stages.
-                                // Opening: Plan appears first, then Subscription, then Note.
+                                // Opening: Plan appears first, then Subscription, then Note and Calculator.
                                 // Closing reverses the same controller. Keep this order/spacing in sync with
                                 // subscription_menu_and_scheduler_contract_test.dart.
                                 Widget stagedButton({
@@ -8768,10 +8820,25 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
                                   );
                                 }
 
-                                return Column(
+                                return ConstrainedBox(
+                                  constraints: BoxConstraints(maxHeight: math.max(0.0,
+                                    constraints.maxHeight - MediaQuery.of(context).padding.vertical
+                                        - (useDesktopNavigation ? 104 : 178) - 12)),
+                                  child: SingleChildScrollView(child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    stagedButton(
+                                      start: .82,
+                                      end: 1,
+                                      child: FloatingActionButton.extended(
+                                        heroTag: 'transactionCalculatorFab',
+                                        onPressed: _openCalculator,
+                                        icon: const Icon(Icons.calculate_rounded),
+                                        label: const Text('Calculator'),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
                                     stagedButton(
                                       start: .68,
                                       end: 1,
@@ -8805,6 +8872,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
                                       ),
                                     ),
                                   ],
+                                  )),
                                 );
                               },
                             ),
@@ -12304,7 +12372,7 @@ class LoanSetupPane extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          const Text('You can add these later: choose Existing loan in Loans. Choose New money only when money is moving now.', textAlign: TextAlign.center),
+          const Text('You can add these later: choose Existing loan in Loans. Choose New loan only when money is moving now.', textAlign: TextAlign.center),
         ],
       ),
     );

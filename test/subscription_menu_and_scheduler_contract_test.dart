@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yutaka/data_merge.dart';
 
 void main() {
-  test('transaction quick menu expands to Plan, Subscription, and Note over blur', () {
+  test('transaction quick menu expands to Plan, Subscription, Note, and Calculator over blur', () {
     final app = File('lib/main.dart').readAsStringSync();
 
     expect(app, contains("heroTag: 'transactionMenuFab'"));
@@ -13,11 +13,13 @@ void main() {
     expect(app, contains("heroTag: 'transactionPlanFab'"));
     expect(app, contains("heroTag: 'transactionSubscriptionFab'"));
     expect(app, contains("heroTag: 'transactionNoteFab'"));
+    expect(app, contains("heroTag: 'transactionCalculatorFab'"));
+    expect(app, contains("label: const Text('Calculator')"));
     expect(app, contains("label: const Text('Subscription')"));
     expect(app, contains("label: const Text('Note')"));
     expect(app, contains('MaterialPageRoute(builder: (_) => const NoteScreen())'));
     expect(app, contains('MaterialPageRoute(builder: (_) => const SubscriptionScreen())'));
-    expect(app, contains('Opening: Plan appears first, then Subscription, then Note.'));
+    expect(app, contains('Opening: Plan appears first, then Subscription, then Note and Calculator.'));
     expect(app, contains('start: .68'));
     expect(app, contains('end: 1'));
     expect(app, contains('start: .38'));

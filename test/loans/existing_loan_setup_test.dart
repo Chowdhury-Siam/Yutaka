@@ -58,7 +58,7 @@ void main() {
       ));
       await tester.tap(find.text(direction == LoanDirection.lent ? 'Money owed to me' : 'Money I owe'));
       await tester.pumpAndSettle();
-      expect(find.text('New money'), findsNothing);
+      expect(find.text('New loan'), findsNothing);
       expect(find.text('Give from account'), findsNothing);
       expect(find.text('Receive into account'), findsNothing);
       await tester.enterText(field('Person name'), 'Rohan');
@@ -110,6 +110,8 @@ void main() {
     await tester.tap(find.text('Add loan'));
     await tester.pumpAndSettle();
     expect(find.text('Give from account'), findsOneWidget);
+    expect(find.text('New loan'), findsNWidgets(2));
+    expect(find.text('New money'), findsNothing);
     await tester.tap(find.text('Existing loan'));
     await tester.pumpAndSettle();
     expect(find.text('Give from account'), findsNothing);
@@ -123,6 +125,67 @@ void main() {
     expect(controller.loans.single.disbursalTransactionId, isNull);
     expect(controller.transactions, isEmpty);
     expect(controller.accounts, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('loan type preference defaults on and can hide both choices safely', (tester) async {
+    expect(controller.loanShowTypeOptions, isTrue);
+    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(ChangeNotifierProvider<AppController>.value(
+      value: controller,
+      child: MaterialApp(home: Scaffold(body: Builder(builder: (context) => Column(children: [
+        TextButton(onPressed: () => showLoanPreferencesSheet(context), child: const Text('Preferences')),
+        TextButton(onPressed: () => showLoanEditorSheet(context), child: const Text('Add loan')),
+        TextButton(onPressed: () => showLoanEditorSheet(context, existingLoan: true), child: const Text('Opening balance')),
+      ])))),
+    ));
+    await tester.tap(find.text('Preferences'));
+    await tester.pumpAndSettle();
+    final toggle = find.widgetWithText(SwitchListTile, 'Show loan type options');
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+    await tester.runAsync(() => controller.setLoanPreferences(showTypeOptions: false));
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    expect(await controller.prefs.getBool('loanShowTypeOptions', true), isFalse);
+    expect((await controller.exportPreferences())['loanShowTypeOptions'], isFalse);
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add loan'));
+    await tester.pumpAndSettle();
+    expect(find.text('Existing loan'), findsNothing);
+    expect(find.text('New loan'), findsOneWidget);
+    expect(find.text('Give from account'), findsOneWidget);
+    await tester.enterText(field('Person name'), 'Rohan');
+    await tester.enterText(field('Amount'), '100');
+    var save = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Save loan')).onPressed!;
+    await tester.runAsync(() async {
+      await (Function.apply(save, const []) as Future<void>);
+    });
+    await tester.pumpAndSettle();
+    expect(controller.accountOf('cash')!.amount, 900);
+    expect(controller.transactions, hasLength(1));
+    // Setup's explicit Existing loan entry remains safe with the selector hidden.
+    await tester.tap(find.text('Opening balance'));
+    await tester.pumpAndSettle();
+    expect(find.text('Existing loan'), findsOneWidget);
+    expect(find.text('Give from account'), findsNothing);
+    await tester.enterText(field('Amount still owed'), '200');
+    save = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Save loan')).onPressed!;
+    await tester.runAsync(() async {
+      await (Function.apply(save, const []) as Future<void>);
+    });
+    await tester.pumpAndSettle();
+    expect(controller.accountOf('cash')!.amount, 900);
+    expect(controller.transactions, hasLength(1));
+    expect(controller.loans, hasLength(2));
+    await tester.runAsync(() => controller.setLoanPreferences(showTypeOptions: true));
+    await tester.tap(find.text('Add loan'));
+    await tester.pumpAndSettle();
+    expect(find.text('Existing loan'), findsOneWidget);
+    expect(find.text('New loan'), findsNWidgets(2));
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 

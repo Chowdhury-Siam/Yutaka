@@ -497,20 +497,24 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
           ),
           const SizedBox(height: 10),
           if (!editing) ...[
-            if (!widget.existingLoan) SleekPillSelector<bool>(
-              options: const [
-                SleekPillOption(value: false, label: 'New money', icon: Icons.payments_rounded),
-                SleekPillOption(value: true, label: 'Existing loan', icon: Icons.history_rounded),
-              ],
-              selected: existingLoan,
-              onChanged: (value) => setState(() => existingLoan = value),
-            ),
-            const SizedBox(height: 8),
+            if (!widget.existingLoan && state.loanShowTypeOptions) ...[
+              SleekPillSelector<bool>(
+                options: const [
+                  SleekPillOption(value: false, label: 'New loan', icon: Icons.payments_rounded),
+                  SleekPillOption(value: true, label: 'Existing loan', icon: Icons.history_rounded),
+                ],
+                selected: existingLoan,
+                onChanged: (value) => setState(() => existingLoan = value),
+              ),
+              const SizedBox(height: 8),
+            ],
             Text(
               existingLoan
                   ? 'Track only the amount still owed. Account balances stay unchanged. Interest starts from Time • Date; keep today for an opening balance.'
                   : state.loanRecordTransactionsByDefault
-                      ? 'This records money moving now and changes the selected account balance. For an old loan already reflected in your balance, choose Existing loan.'
+                      ? state.loanShowTypeOptions
+                          ? 'This records money moving now and changes the selected account balance. For an old loan already reflected in your balance, choose Existing loan.'
+                          : 'This records money moving now and changes the selected account balance.'
                       : 'Account recording is off in loan settings. This loan will leave account balances unchanged.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSleekMuted),
@@ -893,7 +897,7 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
 }
 
 Future<void> showLoanPreferencesSheet(BuildContext context) {
-  return showYutakaPopup<void>(context, maxWidth: 540, maxHeight: 520, child: const _LoanPreferencesSheet());
+  return showYutakaPopup<void>(context, maxWidth: 540, maxHeight: 680, child: const _LoanPreferencesSheet());
 }
 
 class _LoanPreferencesSheet extends StatelessWidget {
@@ -902,7 +906,7 @@ class _LoanPreferencesSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppController>();
-    return Padding(
+    return SingleChildScrollView(child: Padding(
       padding: const EdgeInsets.all(18),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -913,6 +917,13 @@ class _LoanPreferencesSheet extends StatelessWidget {
               Expanded(child: Text('Loan preferences', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900))),
               IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
             ],
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: state.loanShowTypeOptions,
+            onChanged: (value) => state.setLoanPreferences(showTypeOptions: value),
+            title: const Text('Show loan type options', style: TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: const Text('Show New loan and Existing loan when adding a loan. When off, use New loan.'),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -944,6 +955,6 @@ class _LoanPreferencesSheet extends StatelessWidget {
           FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
         ],
       ),
-    );
+    ));
   }
 }

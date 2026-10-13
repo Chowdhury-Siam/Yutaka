@@ -1,3 +1,20 @@
+## 1.0.1293+337
+
+- Rename New money to New loan in the loan editor and setup guidance. Add a default-on Show loan type options switch in Loans preferences to hide or show the New loan / Existing loan selector. With it hidden, normal entry uses New loan; explicit existing-loan setup remains available without changing account balances.
+- Persist and sync the preference with backups, restore its default when switching to a fresh account, and keep Loans preferences scrollable on small screens. Extend loan-entry regression coverage.
+- Update app release metadata; keep Worker version 1.0.1290 unchanged.
+
+## 1.0.1292+336
+
+- Add Calculator beside Note, Subscription, and Plan in the transaction quick-action menu. Close the menu before opening the existing centered calculator popup, and retain the triple-Home-tap shortcut.
+- Guard duplicate popup launches and extend quick-action regression coverage. Update app release metadata; keep Worker version 1.0.1290 unchanged.
+
+## 1.0.1291+335
+
+- Open a centered calculator popup after three consecutive taps on the Home navigation button, including when Home is already selected. Reset the shortcut after another tab, two seconds between taps, app backgrounding, or opening the calculator. Support mobile and desktop navigation.
+- Add arithmetic, decimals, contextual percentages, sign change, backspace, clear, keyboard input, and safe error recovery. Dismiss with Close, outside tap, Back, or Escape; calculations stay separate from stored financial data.
+- Add shortcut, arithmetic, keyboard, dismissal, and small-screen regression checks. Bump app metadata; leave the unchanged Worker version at 1.0.1290.
+
 ## Deployment video build configuration cleanup (1.0.1290+334)
 
 - Accept `YUTAKA_DEPLOYMENT_VIDEO_URL` from repository Variables or Secrets in all platform builds, with a non-empty variable taking priority. Existing video secrets no longer produce an empty app configuration.

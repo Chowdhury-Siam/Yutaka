@@ -32,6 +32,15 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1293" date="2026-10-14">
+      <description><p>Rename New money to New loan and allow hiding loan type choices in Loans preferences.</p></description>
+    </release>
+    <release version="1.0.1292" date="2026-10-14">
+      <description><p>Add Calculator to the quick-action menu alongside Note and Plan.</p></description>
+    </release>
+    <release version="1.0.1291" date="2026-10-14">
+      <description><p>Open a centered calculator popup with three consecutive taps on Home.</p></description>
+    </release>
     <release version="1.0.1290" date="2026-10-12">
       <description><p>Offer a README or video walkthrough before first-time database deployment.</p></description>
     </release>
