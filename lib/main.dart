@@ -8455,8 +8455,6 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
   bool _automaticUpdateCheckInFlight = false;
   Timer? _automaticUpdateRetryTimer;
   Timer? _subscriptionSweepTimer;
-  Timer? _homeTapResetTimer;
-  int _homeTapCount = 0;
   bool _calculatorOpen = false;
   late final AnimationController _transactionMenuController;
 
@@ -8485,7 +8483,6 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
   void dispose() {
     _automaticUpdateRetryTimer?.cancel();
     _subscriptionSweepTimer?.cancel();
-    _homeTapResetTimer?.cancel();
     _transactionMenuController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -8493,9 +8490,6 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) {
-      _resetHomeTaps();
-    }
     if (state == AppLifecycleState.resumed) {
       final controller = context.read<AppController>();
       unawaited(controller.resumeUpdateInstallation());
@@ -8626,30 +8620,15 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
     await Navigator.push(context, MaterialPageRoute(builder: (_) => const SubscriptionScreen()));
   }
 
-  void _resetHomeTaps() {
-    _homeTapResetTimer?.cancel();
-    _homeTapCount = 0;
-  }
-
-  void _recordHomeTap(int index) {
-    if (index != kHomeTabIndex || _calculatorOpen) {
-      _resetHomeTaps();
-      return;
-    }
-    _homeTapResetTimer?.cancel();
-    if (++_homeTapCount == 3) {
-      _resetHomeTaps();
-      unawaited(_openCalculator());
-    } else {
-      _homeTapResetTimer = Timer(const Duration(seconds: 2), _resetHomeTaps);
-    }
+  void _openHomeCalculator() {
+    context.read<AppController>().selectTabIndex(kHomeTabIndex);
+    unawaited(_openCalculator());
   }
 
   Future<void> _openCalculator() async {
     if (_calculatorOpen) {
       return;
     }
-    _resetHomeTaps();
     _closeTransactionMenu();
     _calculatorOpen = true;
     AppMotion.actionHaptic(context);
@@ -8721,7 +8700,6 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
         final extendDesktopNavigation = constraints.maxWidth >= 1180;
 
         void selectTab(int index) {
-          _recordHomeTap(index);
           if (index == tabIndex) return;
           _closeTransactionMenu();
           AppMotion.selectionHaptic(context);
@@ -8737,6 +8715,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
                   selectedIndex: tabIndex,
                   extended: extendDesktopNavigation,
                   onSelected: selectTab,
+                  onHomeLongPress: _openHomeCalculator,
                 ),
               Expanded(
                 child: AnimatedSwitcher(
@@ -8911,6 +8890,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
                               child: _FloatingDockNavigation(
                                 selectedIndex: tabIndex,
                                 onSelected: selectTab,
+                                onHomeLongPress: _openHomeCalculator,
                               ),
                               builder: (context, child) {
                                 final t = _transactionMenuController.value;
@@ -8951,11 +8931,13 @@ class _SideRailNavigation extends StatelessWidget {
     required this.selectedIndex,
     required this.extended,
     required this.onSelected,
+    required this.onHomeLongPress,
   });
 
   final int selectedIndex;
   final bool extended;
   final ValueChanged<int> onSelected;
+  final VoidCallback onHomeLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -9029,6 +9011,7 @@ class _SideRailNavigation extends StatelessWidget {
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(16),
                                 onTap: () => onSelected(index),
+                                onLongPress: index == kHomeTabIndex ? onHomeLongPress : null,
                                 child: Row(
                                   children: [
                                     AnimatedContainer(
@@ -9079,24 +9062,29 @@ class _SideRailNavigation extends StatelessWidget {
                   selectedLabelTextStyle: const TextStyle(color: kSleekAccent, fontWeight: FontWeight.w900, fontSize: 12),
                   unselectedLabelTextStyle: TextStyle(color: scheme.onSurfaceVariant.withOpacity(.82), fontWeight: FontWeight.w800, fontSize: 11),
                   onDestinationSelected: onSelected,
-                  destinations: _FloatingDockNavigation.destinations
-                      .map(
-                        (destination) => NavigationRailDestination(
-                          icon: MotionTouchFeedback(
+                  destinations: List.generate(
+                    _FloatingDockNavigation.destinations.length,
+                    (index) {
+                      final destination = _FloatingDockNavigation.destinations[index];
+                      Widget holdTarget(Widget child) => index == kHomeTabIndex
+                          ? GestureDetector(onLongPress: onHomeLongPress, child: child)
+                          : child;
+                      return NavigationRailDestination(
+                          icon: holdTarget(MotionTouchFeedback(
                             scale: .94,
                             child: Icon(destination.icon),
-                          ),
-                          selectedIcon: MotionTouchFeedback(
+                          )),
+                          selectedIcon: holdTarget(MotionTouchFeedback(
                             scale: .94,
                             child: Icon(destination.activeIcon),
-                          ),
-                          label: MotionTouchFeedback(
+                          )),
+                          label: holdTarget(MotionTouchFeedback(
                             scale: .97,
                             child: Text(destination.label, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          ),
-                        ),
-                      )
-                      .toList(),
+                          )),
+                        );
+                    },
+                  ),
                 ),
               ),
             ],
@@ -9111,10 +9099,12 @@ class _FloatingDockNavigation extends StatelessWidget {
   const _FloatingDockNavigation({
     required this.selectedIndex,
     required this.onSelected,
+    required this.onHomeLongPress,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final VoidCallback onHomeLongPress;
 
   static List<_DockDestination> get destinations => [
     const _DockDestination(label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
@@ -9176,6 +9166,7 @@ class _FloatingDockNavigation extends StatelessWidget {
                       child: MotionInkWell(
                         borderRadius: BorderRadius.circular(22),
                         onTap: () => onSelected(index),
+                        onLongPress: index == kHomeTabIndex ? onHomeLongPress : null,
                         child: Center(
                           child: AnimatedContainer(
                             duration: AppMotion.fast,

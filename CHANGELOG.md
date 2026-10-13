@@ -1,3 +1,8 @@
+## 1.0.1295+339
+
+- Replace the three-tap Home shortcut with a native press-and-hold gesture in the phone dock and both desktop navigation layouts. Normal Home taps only navigate; holding Home returns to Home and opens the same centered calculator popup.
+- Remove the tap counter and timeout timer. Keep the Calculator quick action beside Note and Plan, duplicate-popup protection, and negative-decimal fix. Update gesture regressions and app metadata; keep Worker version 1.0.1290 unchanged.
+
 ## 1.0.1294+338
 
 - Preserve the minus sign when entering a negative decimal immediately after AC, so ± then .5 produces -0.5.

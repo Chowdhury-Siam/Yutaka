@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1295" date="2026-10-14">
+      <description><p>Open the calculator by holding Home instead of tapping three times.</p></description>
+    </release>
     <release version="1.0.1294" date="2026-10-14">
       <description><p>Fix negative decimal entry in the calculator and correct popup regression checks.</p></description>
     </release>

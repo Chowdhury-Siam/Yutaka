@@ -53,7 +53,7 @@ void main() {
   }
 
   for (final width in [360.0, 1000.0, 1280.0]) {
-    testWidgets('three consecutive Home taps open one popup at width $width', (tester) async {
+    testWidgets('holding Home opens one popup at width $width', (tester) async {
       final controller = CalculatorTestController()..updateLastCheckedAt = DateTime.now();
       await tester.binding.setSurfaceSize(Size(width, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -62,37 +62,28 @@ void main() {
         child: const MaterialApp(home: MainShell()),
       ));
       await finishMotion(tester);
-      Future<void> home() async {
-        await tester.tap(find.byIcon(controller.tabIndex == kHomeTabIndex
-            ? Icons.home_rounded : Icons.home_outlined));
+      Finder homeIcon() => find.byIcon(controller.tabIndex == kHomeTabIndex
+          ? Icons.home_rounded : Icons.home_outlined);
+      // Normal taps, including the old triple-tap gesture, no longer open it.
+      for (var i = 0; i < 3; i++) {
+        await tester.tap(homeIcon());
         await finishMotion(tester);
       }
-
-      await home();
-      await home();
       expect(find.byType(CalculatorPopup), findsNothing);
-      await tester.pump(const Duration(milliseconds: 2100));
-      await home();
-      expect(find.byType(CalculatorPopup), findsNothing);
-      // A different tab interrupts the sequence; entering Home counts as tap one.
-      await tester.tap(find.byIcon(Icons.category_outlined));
-      await finishMotion(tester);
-      await home();
-      await home();
-      expect(find.byType(CalculatorPopup), findsNothing);
-      await home();
+      await tester.longPress(homeIcon());
       await finishMotion(tester);
       expect(find.byType(CalculatorPopup), findsOneWidget);
       expect(controller.tabIndex, kHomeTabIndex);
       await tester.tap(find.byTooltip('Close calculator'));
       await finishMotion(tester);
       expect(find.byType(CalculatorPopup), findsNothing);
-      await home();
-      await home();
-      expect(find.byType(CalculatorPopup), findsNothing);
-      await home();
+      await tester.tap(find.byIcon(Icons.category_outlined));
+      await finishMotion(tester);
+      expect(controller.tabIndex, kCategoriesTabIndex);
+      await tester.longPress(homeIcon());
       await finishMotion(tester);
       expect(find.byType(CalculatorPopup), findsOneWidget);
+      expect(controller.tabIndex, kHomeTabIndex);
       // Android/system Back dismisses the modal without leaving Home.
       await tester.binding.handlePopRoute();
       await finishMotion(tester);
