@@ -33,7 +33,8 @@ void main() {
     final popupEnd = app.indexOf('// -----------------------------------------------------------------------------\n// Onboarding', popupStart);
     final popupBody = app.substring(popupStart, popupEnd);
     expect(popupBody, isNot(contains('SingleChildScrollView(')));
-    expect(loans, isNot(contains('SingleChildScrollView(')));
+    final loanEditors = loans.substring(0, loans.indexOf('Future<void> showLoanPreferencesSheet'));
+    expect(loanEditors, isNot(contains('SingleChildScrollView(')));
     expect(profile, isNot(contains('SingleChildScrollView(')));
   });
 }

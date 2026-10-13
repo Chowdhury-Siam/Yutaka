@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1294" date="2026-10-14">
+      <description><p>Fix negative decimal entry in the calculator and correct popup regression checks.</p></description>
+    </release>
     <release version="1.0.1293" date="2026-10-14">
       <description><p>Rename New money to New loan and allow hiding loan type choices in Loans preferences.</p></description>
     </release>

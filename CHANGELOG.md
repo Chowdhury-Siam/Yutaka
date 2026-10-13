@@ -1,3 +1,10 @@
+## 1.0.1294+338
+
+- Preserve the minus sign when entering a negative decimal immediately after AC, so ± then .5 produces -0.5.
+- Start and complete each navigation, quick-action, and dialog animation in calculator regressions before checking visibility or clicking controls. Keep bounded frame pumping for repeating dashboard animations.
+- Scope fixed-content loan popup checks to the loan and payment editors, allowing the preferences popup to scroll. Keep the default-on loan type option switch and calculator shortcuts intact.
+- Update app metadata; keep Worker version 1.0.1290 unchanged.
+
 ## 1.0.1293+337
 
 - Rename New money to New loan in the loan editor and setup guidance. Add a default-on Show loan type options switch in Loans preferences to hide or show the New loan / Existing loan selector. With it hidden, normal entry uses New loan; explicit existing-loan setup remains available without changing account balances.

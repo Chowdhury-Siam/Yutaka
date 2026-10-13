@@ -89,7 +89,7 @@ class _CalculatorPopupState extends State<CalculatorPopup> {
           _entry = '0';
         }
       } else if (key == '±') {
-        if (_replaceEntry && _operator != null) {
+        if (_replaceEntry && (_operator != null || _entry == '0')) {
           _entry = '-0';
           _replaceEntry = false;
         } else {

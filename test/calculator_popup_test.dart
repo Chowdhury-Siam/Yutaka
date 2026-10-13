@@ -17,6 +17,13 @@ void main() {
   String result(WidgetTester tester) => tester.widget<Text>(
       find.byKey(const ValueKey('calculatorResult'))).data!;
 
+  Future<void> finishMotion(WidgetTester tester) async {
+    // The first frame starts a new ticker; elapsed time must follow that frame.
+    // Use bounded pumps because dashboard and empty-state animations repeat.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+  }
+
   Future<void> press(WidgetTester tester, List<String> keys) async {
     for (final key in keys) {
       await tester.tap(find.widgetWithText(FilledButton, key));
@@ -54,11 +61,11 @@ void main() {
         value: controller,
         child: const MaterialApp(home: MainShell()),
       ));
-      await tester.pump(const Duration(milliseconds: 400));
+      await finishMotion(tester);
       Future<void> home() async {
         await tester.tap(find.byIcon(controller.tabIndex == kHomeTabIndex
             ? Icons.home_rounded : Icons.home_outlined));
-        await tester.pump(const Duration(milliseconds: 100));
+        await finishMotion(tester);
       }
 
       await home();
@@ -69,26 +76,26 @@ void main() {
       expect(find.byType(CalculatorPopup), findsNothing);
       // A different tab interrupts the sequence; entering Home counts as tap one.
       await tester.tap(find.byIcon(Icons.category_outlined));
-      await tester.pump(const Duration(milliseconds: 400));
+      await finishMotion(tester);
       await home();
       await home();
       expect(find.byType(CalculatorPopup), findsNothing);
       await home();
-      await tester.pump(const Duration(milliseconds: 400));
+      await finishMotion(tester);
       expect(find.byType(CalculatorPopup), findsOneWidget);
       expect(controller.tabIndex, kHomeTabIndex);
       await tester.tap(find.byTooltip('Close calculator'));
-      await tester.pump(const Duration(milliseconds: 400));
+      await finishMotion(tester);
       expect(find.byType(CalculatorPopup), findsNothing);
       await home();
       await home();
       expect(find.byType(CalculatorPopup), findsNothing);
       await home();
-      await tester.pump(const Duration(milliseconds: 400));
+      await finishMotion(tester);
       expect(find.byType(CalculatorPopup), findsOneWidget);
       // Android/system Back dismisses the modal without leaving Home.
       await tester.binding.handlePopRoute();
-      await tester.pump(const Duration(milliseconds: 400));
+      await finishMotion(tester);
       expect(find.byType(CalculatorPopup), findsNothing);
       expect(controller.tabIndex, kHomeTabIndex);
       expect(tester.takeException(), isNull);
@@ -107,25 +114,25 @@ void main() {
       value: controller,
       child: const MaterialApp(home: MainShell()),
     ));
-    await tester.pump(const Duration(milliseconds: 400));
+    await finishMotion(tester);
     final menu = find.byTooltip('Note, plan, subscriptions, and calculator');
     await tester.tap(menu);
-    await tester.pump(const Duration(milliseconds: 400));
+    await finishMotion(tester);
     expect(find.widgetWithText(FloatingActionButton, 'Note'), findsOneWidget);
     expect(find.widgetWithText(FloatingActionButton, 'Plan'), findsOneWidget);
     await tester.tap(find.widgetWithText(FloatingActionButton, 'Calculator'));
-    await tester.pump(const Duration(milliseconds: 400));
+    await finishMotion(tester);
     expect(find.byType(CalculatorPopup), findsOneWidget);
     expect(controller.tabIndex, kTransactionTabIndex);
     await press(tester, ['2', '+', '3', '=']);
     expect(result(tester), '5');
     await tester.tap(find.byTooltip('Close calculator'));
-    await tester.pump(const Duration(milliseconds: 400));
+    await finishMotion(tester);
     expect(find.byType(CalculatorPopup), findsNothing);
     await tester.tap(menu);
-    await tester.pump(const Duration(milliseconds: 400));
+    await finishMotion(tester);
     await tester.tap(find.widgetWithText(FloatingActionButton, 'Calculator'));
-    await tester.pump(const Duration(milliseconds: 400));
+    await finishMotion(tester);
     expect(find.byType(CalculatorPopup), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
