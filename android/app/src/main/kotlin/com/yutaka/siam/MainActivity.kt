@@ -45,6 +45,7 @@ class MainActivity: FlutterFragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        DirectApkInstaller.onAppResumed(this)
         val action = intent.getStringExtra(YutakaWidgetProvider.QUICK_ACTION)
         if (action != null && deviceAccessChannel != null) {
             deviceAccessChannel?.invokeMethod("quickAction", action)
@@ -190,11 +191,6 @@ class MainActivity: FlutterFragmentActivity() {
                 info.installStatus() == InstallStatus.DOWNLOADED -> playUpdateManager.completeUpdate()
             }
         }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        DirectApkInstaller.onAppResumed(this)
     }
 
     override fun onDestroy() {
