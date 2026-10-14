@@ -9,6 +9,7 @@ void main() {
       File('lib/loans/loan_sheets.dart'),
       File('lib/loans/loan_screens.dart'),
       File('lib/profile/profile_ui.dart'),
+      File('lib/transaction_tools.dart'),
     ];
 
     var fields = 0;
