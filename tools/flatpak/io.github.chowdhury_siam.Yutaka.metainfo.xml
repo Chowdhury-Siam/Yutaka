@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1299" date="2026-10-15">
+      <description><p>Refine the loan type popup with outlined choices, green icon tiles, and subtle press feedback.</p></description>
+    </release>
     <release version="1.0.1298" date="2026-10-14">
       <description><p>Choose New loan or Existing loan in a centered popup before opening the loan form.</p></description>
     </release>
