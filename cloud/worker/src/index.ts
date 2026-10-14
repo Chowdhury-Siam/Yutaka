@@ -1,4 +1,4 @@
-import { transactionCategoryAmounts } from './transaction-splits.ts';
+import { transactionCategoryAmounts, transactionAccountAmounts, transactionScopeAmount } from './transaction-splits.ts';
 import { createClient, type Client } from '@libsql/client/web';
 import { profilePage } from './profile.ts';
 import { deleteAccountPage } from './delete_account.ts';
@@ -2447,7 +2447,8 @@ async function buildScheduledAnalyticsPdf(
         const title = cleanText(tx.title, 120) || categoryName(tx.category_id);
         const route = tx.type === 'transfer'
           ? `${accountName(tx.from_account_id)} -> ${accountName(tx.to_account_id)}`
-          : accountName(tx.from_account_id);
+          : [...transactionAccountAmounts(tx)].map(([id, share]) => tx.account_splits && tx.account_splits !== '{}'
+            ? `${accountName(id)}: ${scheduledAnalyticsMoney(currencyCode, share)}` : accountName(id)).join(' + ');
         lines.push(`${date} | ${type} | ${sign}${scheduledAnalyticsMoney(currencyCode, amount)} | ${title}`);
         const categoryDescription = tx.category_splits ? [...transactionCategoryAmounts(tx)].map(([id, share]) => `${categoryName(id)}: ${scheduledAnalyticsMoney(currencyCode, share)}`).join(' + ') : categoryName(tx.category_id);
         lines.push(`Category: ${categoryDescription} | Account: ${route}${Number(tx.exclude_from_reports ?? 0) === 1 ? ' | Excluded from reports' : ''}`);
@@ -2542,9 +2543,7 @@ async function buildScheduledAnalyticsPdf(
       for (const tx of current.txs) {
         const when = transactionEffectiveTimestamp(tx);
         if (when < monthStart || when >= monthEnd || tx.type !== 'expense' || Number(tx.exclude_from_reports ?? 0) === 1) continue;
-        if (!allAccounts && !allowedAccounts.has(String(tx.from_account_id ?? ''))) continue;
-        budgetSpent += allCategories ? rowNumber(tx, 'amount') : [...transactionCategoryAmounts(tx)]
-          .filter(([id]) => allowedCategories.has(id)).reduce((sum, [, share]) => sum + share, 0);
+        budgetSpent += transactionScopeAmount(tx, allAccounts ? null : allowedAccounts, allCategories ? null : allowedCategories);
       }
     }
 
