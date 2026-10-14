@@ -1,3 +1,8 @@
+## 1.0.1299+343
+
+- Restyle the New loan / Existing loan choices as dark outlined cards with green icon tiles, softer descriptions, and subtle press feedback. Keep native button keyboard and accessibility behavior and the existing loan flow.
+- Update app release metadata; keep Worker version 1.0.1297 unchanged.
+
 ## 1.0.1298+342
 
 - Open a centered New loan / Existing loan choice before the loan form. Continue with the selected loan type and preserve the lending or borrowing direction.
