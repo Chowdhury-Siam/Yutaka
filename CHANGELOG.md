@@ -1,3 +1,21 @@
+## 1.0.1305+349
+
+- Add Split accounts to income and expense transactions. Allocate the total across 2–20 regular/credit accounts in a centered popup, validate matching totals, share service charges proportionally, and allow editing or clearing the split.
+- Keep one transaction while applying, reversing, deleting, and restoring each account share. Include every affected account in sync; preserve allocations in backups, shortcuts, duplicates, search, filters, transaction details, and PDF/XLSX/TXT reports.
+- Count the selected account share in scoped budgets. When a budget selects both accounts and categories, apply the two allocations proportionally. Preserve existing transactions and balances with the additive database version 18 migration.
+- Add account split balance, rollback, upgrade, backup, shortcut, filter, budget, and editor regressions. Update the app and Worker metadata and bundled Worker reports.
+
+## 1.0.1304+348
+
+- Replace the saved shortcut three-dot menu with visible Rename and Delete shortcut buttons. Let the controls wrap on narrow screens while keeping the shortcut tap available to open a fresh draft.
+- Update app metadata; keep Worker version 1.0.1300 unchanged.
+
+## 1.0.1303+347
+
+- Show transaction deletion and Undo in Yutaka’s shared top feedback banner instead of the bottom action snackbar. Keep an eight-second expiry even when accessibility navigation is enabled.
+- Keep Close available, dismiss before running Undo, and guard repeated action clicks. Bound exit animations so muted tickers cannot keep feedback stuck on screen; use the root navigator overlay when needed.
+- Add feedback regressions for top placement, automatic expiry, accessibility, single-use Undo, manual dismissal, and disabled/muted animations. Update app metadata; keep Worker version 1.0.1300 unchanged.
+
 ## 1.0.1302+346
 
 - Merge the duplicate Android onNewIntent overrides into one callback. Keep Flutter intent delivery, the current intent, direct-install status refresh, and widget quick actions together so both Direct APK and Google Play AAB Kotlin builds compile.
