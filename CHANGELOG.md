@@ -1,3 +1,9 @@
+## 1.0.1302+346
+
+- Merge the duplicate Android onNewIntent overrides into one callback. Keep Flutter intent delivery, the current intent, direct-install status refresh, and widget quick actions together so both Direct APK and Google Play AAB Kotlin builds compile.
+- Add a lifecycle-signature regression to the existing Android Python quality gate; confirm it rejects the previous duplicate callback.
+- Update app release metadata; keep Worker version 1.0.1300 unchanged.
+
 ## 1.0.1301+345
 
 - Apply the shared adaptive copy/paste menu, interactive selection, and outside-tap keyboard dismissal to transaction search, shortcut names, and split amount inputs. Include the new transaction tools in the text-field regression checks.
