@@ -346,25 +346,43 @@ class _LoanTypeChoicePopup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final recordMovements = context.read<AppController>().loanRecordTransactionsByDefault;
     Widget option({required String title, required String description, required IconData icon, required bool existing}) {
-      return FilledButton.tonal(
-        onPressed: () => Navigator.pop(context, existing),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
+      return MotionTouchFeedback(
+        scale: .98,
+        child: OutlinedButton(
+          onPressed: () => Navigator.pop(context, existing),
+          style: OutlinedButton.styleFrom(
+            backgroundColor: scheme.surfaceContainerLow,
+            foregroundColor: scheme.onSurface,
+            side: BorderSide(color: scheme.outlineVariant.withOpacity(.55)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+            padding: const EdgeInsets.all(16),
+            minimumSize: const Size(0, 88),
+            alignment: Alignment.centerLeft,
+          ),
           child: Row(children: [
-            Icon(icon, size: 28),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: scheme.primary.withOpacity(.12),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Icon(icon, size: 24, color: scheme.primary),
+            ),
             const SizedBox(width: 14),
             Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                Text(title, style: theme.textTheme.titleMedium?.copyWith(color: scheme.onSurface, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 5),
-                Text(description, style: theme.textTheme.bodySmall),
+                Text(description, style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant, height: 1.35)),
               ],
             )),
             const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded),
+            Icon(Icons.chevron_right_rounded, size: 20, color: scheme.onSurfaceVariant),
           ]),
         ),
       );
@@ -380,11 +398,11 @@ class _LoanTypeChoicePopup extends StatelessWidget {
             IconButton(tooltip: 'Close loan type choice', onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
           ]),
           const SizedBox(height: 8),
-          const Text('Is this a new loan or one that already exists?'),
+          Text('Is this a new loan or one that already exists?', style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
           const SizedBox(height: 20),
-          option(title: 'New loan', description: recordMovements ? 'Money is moving now. Update the selected account balance.' : 'Record a loan starting now.', icon: Icons.payments_rounded, existing: false),
+          option(title: 'New loan', description: recordMovements ? 'Money moving now. Updates your account balance.' : 'Record a loan starting now.', icon: Icons.payments_rounded, existing: false),
           const SizedBox(height: 12),
-          option(title: 'Existing loan', description: 'Already included in your balance. Track only what is still owed.', icon: Icons.history_rounded, existing: true),
+          option(title: 'Existing loan', description: 'Track what is still owed. Keeps your balance unchanged.', icon: Icons.history_rounded, existing: true),
           const SizedBox(height: 16),
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         ],
