@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_today_spending">Yutaka · Today’s spending</string>
+    <string name="widget_add_expense">＋ Add expense</string>
+    <string name="widget_description">Today’s spending with a shortcut to add an expense</string>
+</resources>
