@@ -105,6 +105,108 @@ void main() {
     expect(await controller.database.deletedTransactions(), hasLength(1));
   });
 
+  test('account splits preserve both balances, budgets, backup, sync, edit and undo', () async {
+    final draft = split().copyWith(accountSplits: {'cash': 60, 'bank': 40});
+    await controller.addTransaction(draft);
+    await controller.addTransaction(draft);
+    expect(controller.transactions, hasLength(1));
+    expect(controller.accountOf('cash')!.amount, 934);
+    expect(controller.accountOf('bank')!.amount, 456);
+    expect(controller.filteredTransactions(accountId: 'bank').single.id, draft.id);
+    controller.filterAccountIds = ['bank'];
+    expect(controller.filteredTransactions().single.id, draft.id);
+    controller.filterAccountIds = [];
+    expect(transactionMatchesSearch(controller, draft, 'Market Bank'), isTrue);
+    final now = DateTime.now();
+    await controller.saveBudget(Budget(id: 'bank-food', selectedMonth: now, amount: 200,
+      allAccountsSelected: false, allCategoriesSelected: false, accountIds: ['bank'], categoryIds: [food],
+      createdOn: now, updatedOn: now));
+    expect(controller.budgetProgress().single.spent, closeTo(26.4, .000001));
+    expect(draft.amountForScope(accountIds: ['cash', 'bank']), 110);
+    await controller.saveTransactionShortcut(TransactionShortcut(id: 'mixed', name: 'Mixed payment', draft: draft));
+    final preferences = await controller.exportPreferences();
+    expect(TransactionShortcut.decode(preferences['transactionShortcuts'] as String).single.draft.accountSplits,
+        {'cash': 60, 'bank': 40});
+    final snapshot = await controller.database.exportAll();
+    await controller.database.importAll(snapshot);
+    await controller.reload();
+    expect(controller.transactions.single.accountSplits, {'cash': 60, 'bank': 40});
+    expect(controller.accountOf('bank')!.amount, 456);
+    final updated = draft.copyWith(accountSplits: {'cash': 20, 'bank': 80});
+    await controller.updateTransaction(updated);
+    expect(controller.accountOf('cash')!.amount, 978);
+    expect(controller.accountOf('bank')!.amount, 412);
+    final queued = await controller.database.pendingSyncOperations();
+    for (final id in ['cash', 'bank']) {
+      final operation = queued.singleWhere((row) => row['entity_type'] == 'accounts' && row['entity_id'] == id);
+      expect(jsonDecode(operation['payload_json'] as String)['amount'], controller.accountOf(id)!.amount);
+    }
+    final transaction = queued.singleWhere((row) => row['entity_type'] == 'transactions');
+    expect(jsonDecode(transaction['payload_json'] as String)['account_splits'], jsonEncode({'cash': 20.0, 'bank': 80.0}));
+    await controller.moveTransactionToTrash(draft.id);
+    expect(controller.accountOf('cash')!.amount, 1000);
+    expect(controller.accountOf('bank')!.amount, 500);
+    await controller.restoreDeletedTransaction(draft.id);
+    await controller.restoreDeletedTransaction(draft.id);
+    expect(controller.accountOf('cash')!.amount, 978);
+    expect(controller.accountOf('bank')!.amount, 412);
+    await controller.updateTransaction(updated.copyWith(accountSplits: {}));
+    expect(controller.accountOf('cash')!.amount, 890);
+    expect(controller.accountOf('bank')!.amount, 500);
+    await controller.deleteTransaction(draft.id);
+    expect(controller.accountOf('cash')!.amount, 1000);
+    expect(controller.accountOf('bank')!.amount, 500);
+  });
+
+  test('split income credits net amounts and missing secondary accounts roll back atomically', () async {
+    final draft = split().copyWith(type: MoneyTransactionType.income, amount: 90,
+        categorySplits: {}, accountSplits: {'cash': 60, 'bank': 40});
+    await controller.addTransaction(draft);
+    expect(controller.accountOf('cash')!.amount, 1054);
+    expect(controller.accountOf('bank')!.amount, 536);
+    await controller.moveTransactionToTrash(draft.id);
+    await database.delete('accounts', where: 'id = ?', whereArgs: ['bank']);
+    await expectLater(controller.restoreDeletedTransaction(draft.id), throwsStateError);
+    expect(await controller.database.deletedTransactions(), hasLength(1));
+    await expectLater(controller.addTransaction(draft.copyWith(id: 'missing-account')), throwsStateError);
+    expect((await database.query('accounts', where: 'id = ?', whereArgs: ['cash'])).single['amount'], 1000);
+    expect(await database.query('transactions'), isEmpty);
+  });
+
+  test('account split validation rejects mismatches, loans and transfers; legacy metadata is optional', () async {
+    final draft = split();
+    for (final invalid in [
+      draft.copyWith(accountSplits: {'cash': 60, 'bank': 50}),
+      draft.copyWith(accountSplits: {'cash': 100}),
+      draft.copyWith(accountSplits: {'cash': -10, 'bank': 110}),
+      draft.copyWith(accountSplits: {'cash': double.nan, 'bank': 100}),
+      draft.copyWith(accountSplits: {'other': 60, 'bank': 40}),
+      draft.copyWith(type: MoneyTransactionType.transfer, categorySplits: {}, accountSplits: {'cash': 60, 'bank': 40}),
+      draft.copyWith(linkedEntityType: 'loans', categorySplits: {}, accountSplits: {'cash': 60, 'bank': 40}),
+    ]) {
+      await expectLater(controller.addTransaction(invalid), throwsStateError);
+    }
+    expect(controller.accountOf('cash')!.amount, 1000);
+    expect(controller.accountOf('bank')!.amount, 500);
+    final legacy = MoneyTransaction.fromMap(draft.toMap()..remove('account_splits'));
+    expect(legacy.accountSplits, isEmpty);
+    expect(legacy.accountAmounts, {'cash': 110});
+  });
+
+  test('upgrading a version 17 database preserves existing balances and transactions', () async {
+    await controller.addTransaction(split());
+    await database.execute('ALTER TABLE transactions DROP COLUMN account_splits');
+    await database.setVersion(17);
+    await database.close();
+    database = await YutakaDatabase().db;
+    expect(await database.getVersion(), 18);
+    final restored = MoneyTransaction.fromMap((await database.query('transactions')).single);
+    expect(restored.accountSplits, isEmpty);
+    expect(restored.categorySplits, {food: 60, travel: 40});
+    expect(restored.amount, 110);
+    expect((await database.query('accounts', where: 'id = ?', whereArgs: ['cash'])).single['amount'], 890);
+  });
+
   test('transfer undo preserves source-only fees and destination money', () async {
     final now = DateTime.now();
     await controller.addTransaction(MoneyTransaction(id: 'transfer', type: MoneyTransactionType.transfer,
@@ -192,6 +294,44 @@ void main() {
       expect(controller.accountOf('cash')!.amount, direction == LoanDirection.lent ? 850 : 1150);
     });
   }
+
+  testWidgets('account split popup validates amounts before saving a reviewed draft', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(ChangeNotifierProvider<AppController>.value(value: controller,
+      child: MaterialApp(home: Builder(builder: (context) => Scaffold(body: TextButton(
+        onPressed: () => showTransactionEditor(context,
+          shortcut: TransactionShortcut(id: 'mixed', name: 'Mixed payment', draft: split())),
+        child: const Text('Open editor'),
+      ))))));
+    await tester.tap(find.text('Open editor'));
+    await tester.pumpAndSettle();
+    final splitButton = find.widgetWithText(OutlinedButton, 'Split accounts');
+    await tester.ensureVisible(splitButton);
+    await tester.tap(splitButton);
+    await tester.pumpAndSettle();
+    final cash = find.byWidgetPredicate((widget) => widget is TextField && widget.decoration?.labelText == 'Cash');
+    final bank = find.byWidgetPredicate((widget) => widget is TextField && widget.decoration?.labelText == 'Bank');
+    await tester.enterText(cash, '60');
+    await tester.enterText(bank, '50');
+    await tester.tap(find.text('Done'));
+    await tester.pump();
+    expect(find.text('Use 2–20 accounts whose amounts equal the total.'), findsOneWidget);
+    await tester.enterText(bank, '40');
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit account split'), findsOneWidget);
+    expect(controller.transactions, isEmpty);
+    final saveFinder = find.widgetWithText(FilledButton, 'Save');
+    await tester.ensureVisible(saveFinder);
+    final save = tester.widget<FilledButton>(saveFinder).onPressed!;
+    await tester.runAsync(() async { await (Function.apply(save, const []) as Future<void>); });
+    await tester.pumpAndSettle();
+    expect(controller.transactions.single.accountSplits, {'cash': 60, 'bank': 40});
+    expect(controller.accountOf('cash')!.amount, 934);
+    expect(controller.accountOf('bank')!.amount, 456);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('search filters visible records and shortcut opens a fresh reviewed draft', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1000));
