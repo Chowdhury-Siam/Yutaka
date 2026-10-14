@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp" android:minHeight="160dp" android:minResizeWidth="180dp" android:minResizeHeight="160dp"
+    android:targetCellWidth="3" android:targetCellHeight="2" android:initialLayout="@layout/yutaka_widget"
+    android:previewLayout="@layout/yutaka_widget" android:description="@string/widget_description"
+    android:resizeMode="horizontal|vertical" android:updatePeriodMillis="1800000" android:widgetCategory="home_screen" />
