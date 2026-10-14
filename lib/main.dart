@@ -22,6 +22,7 @@ import 'package:flutter/foundation.dart' hide Category, Summary;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart' show TickerCanceled;
 import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -199,7 +200,7 @@ class YutakaDatabase {
     final path = p.join(dir, 'yutaka_flutter.db');
     _db = await sql.openDatabase(
       path,
-      version: 17,
+      version: 18,
       onCreate: (database, version) async {
         await _createSchema(database);
         await _seed(database);
@@ -490,6 +491,9 @@ class YutakaDatabase {
     if (!columns.contains('exclude_from_reports')) {
       await database.execute('ALTER TABLE transactions ADD COLUMN exclude_from_reports INTEGER NOT NULL DEFAULT 0');
     }
+    if (!columns.contains('account_splits')) {
+      await database.execute("ALTER TABLE transactions ADD COLUMN account_splits TEXT NOT NULL DEFAULT '{}'");
+    }
     if (!columns.contains('category_splits')) {
       await database.execute("ALTER TABLE transactions ADD COLUMN category_splits TEXT NOT NULL DEFAULT '{}'");
     }
@@ -616,9 +620,9 @@ class YutakaDatabase {
         final transactionReferences = sql.Sqflite.firstIntValue(await txn.rawQuery(
               '''
               SELECT COUNT(*) FROM transactions
-              WHERE from_account_id = ? OR to_account_id = ?
+              WHERE from_account_id = ? OR to_account_id = ? OR instr(account_splits, ?) > 0
               ''',
-              [account.id, account.id],
+              [account.id, account.id, jsonEncode(account.id)],
             )) ??
             0;
         final budgetReferences = sql.Sqflite.firstIntValue(await txn.rawQuery(
@@ -668,9 +672,9 @@ class YutakaDatabase {
       final transactionReferences = sql.Sqflite.firstIntValue(await database.rawQuery(
             '''
             SELECT COUNT(*) FROM transactions
-            WHERE from_account_id = ? OR to_account_id = ?
+            WHERE from_account_id = ? OR to_account_id = ? OR instr(account_splits, ?) > 0
             ''',
-            [account.id, account.id],
+            [account.id, account.id, jsonEncode(account.id)],
           )) ??
           0;
       final budgetReferences = sql.Sqflite.firstIntValue(await database.rawQuery(
@@ -699,9 +703,9 @@ class YutakaDatabase {
         final transactionReferences = sql.Sqflite.firstIntValue(await txn.rawQuery(
               '''
               SELECT COUNT(*) FROM transactions
-              WHERE from_account_id = ? OR to_account_id = ?
+              WHERE from_account_id = ? OR to_account_id = ? OR instr(account_splits, ?) > 0
               ''',
-              [account.id, account.id],
+              [account.id, account.id, jsonEncode(account.id)],
             )) ??
             0;
         final budgetReferences = sql.Sqflite.firstIntValue(await txn.rawQuery(
@@ -1049,7 +1053,7 @@ class YutakaDatabase {
       }
       final accountRows = await txn.query('accounts', orderBy: 'sequence ASC, created_on ASC');
       if (isNew) {
-        final touched = {transaction.fromAccountId, transaction.toAccountId};
+        final touched = transaction.accountIds;
         for (final row in accountRows.where((row) => touched.contains(row['id']))) {
           await _enqueueSyncOperation(txn, entityType: 'accounts',
               entityId: row['id'] as String, operation: 'upsert', payload: row);
@@ -1099,10 +1103,16 @@ class YutakaDatabase {
       await txn.rawUpdate('UPDATE accounts SET amount = amount + ?, updated_on = ? WHERE id = ?', [delta * direction, dateToDb(DateTime.now()), accountId]);
     }
 
-    if (tx.type == MoneyTransactionType.income) {
-      await updateAmount(tx.fromAccountId, tx.amount);
-    } else if (tx.type == MoneyTransactionType.expense) {
-      await updateAmount(tx.fromAccountId, -tx.amount);
+    if (tx.type != MoneyTransactionType.transfer) {
+      for (final entry in tx.accountAmounts.entries) {
+        if (tx.accountSplits.isNotEmpty) {
+          final rows = await txn.query('accounts', columns: ['id'], where: 'id = ?', whereArgs: [entry.key]);
+          if (rows.isEmpty) {
+            throw StateError('Choose existing accounts for the split.');
+          }
+        }
+        await updateAmount(entry.key, tx.type == MoneyTransactionType.income ? entry.value : -entry.value);
+      }
     } else {
       // A transfer service charge belongs only to the source account. The
       // destination still receives the original transfer amount.
@@ -3368,7 +3378,7 @@ class AppController extends ChangeNotifier {
       var missingAccountReferences = 0;
       var missingCategoryReferences = 0;
       for (final tx in transactions) {
-        if (tx.fromAccountId.isEmpty || !accountIds.contains(tx.fromAccountId)) {
+        if (tx.accountAmounts.keys.any((id) => id.isEmpty || !accountIds.contains(id))) {
           missingAccountReferences += 1;
         }
         if (tx.type == MoneyTransactionType.transfer && (tx.toAccountId == null || !accountIds.contains(tx.toAccountId))) {
@@ -7259,12 +7269,12 @@ class AppController extends ChangeNotifier {
         if (range.start != null && listOn.isBefore(range.start!)) return false;
         if (range.end != null && !listOn.isBefore(range.end!)) return false;
       }
-      if (filterAccountIds.isNotEmpty && !filterAccountIds.contains(tx.fromAccountId) && !(tx.toAccountId != null && filterAccountIds.contains(tx.toAccountId))) return false;
+      if (filterAccountIds.isNotEmpty && !tx.accountIds.any(filterAccountIds.contains)) { return false; }
       final isReportableCategoryTransaction = tx.countsAsIncome || tx.countsAsExpense;
       if (filterCategoryIds.isNotEmpty && (!isReportableCategoryTransaction || !tx.categoryAmounts.keys.any(filterCategoryIds.contains))) { return false; }
       if (filterTypes.isNotEmpty && !filterTypes.contains(tx.type)) return false;
       if (categoryId != null && (!isReportableCategoryTransaction || !tx.categoryAmounts.containsKey(categoryId))) { return false; }
-      if (accountId != null && tx.fromAccountId != accountId && tx.toAccountId != accountId) return false;
+      if (accountId != null && !tx.accountIds.contains(accountId)) { return false; }
       if (types != null && !types.contains(tx.type)) return false;
       return true;
     }).toList()
@@ -7396,11 +7406,12 @@ class AppController extends ChangeNotifier {
       final txs = transactions.where((tx) {
         if (!tx.countsAsExpense) return false;
         if (tx.createdOn.isBefore(start) || !tx.createdOn.isBefore(end)) return false;
-        if (!budget.allAccountsSelected && !budget.accountIds.contains(tx.fromAccountId)) return false;
+        if (!budget.allAccountsSelected && !tx.accountAmounts.keys.any(budget.accountIds.contains)) { return false; }
         if (!budget.allCategoriesSelected && !tx.categoryAmounts.keys.any(budget.categoryIds.contains)) { return false; }
         return true;
       }).toList();
-      result.add(BudgetProgress(budget, txs.fold<double>(0, (sum, tx) => sum + (budget.allCategoriesSelected ? tx.amount : tx.amountForCategories(budget.categoryIds))), txs));
+      result.add(BudgetProgress(budget, txs.fold<double>(0, (sum, tx) => sum + tx.amountForScope(accountIds: budget.allAccountsSelected ? null : budget.accountIds,
+          categoryIds: budget.allCategoriesSelected ? null : budget.categoryIds)), txs));
     }
     return result;
   }
@@ -7711,10 +7722,8 @@ class AppController extends ChangeNotifier {
       await database.enqueueRowsForTable('accounts');
     } else {
       await _enqueueTouchedTransactionAccounts([
-        previous.fromAccountId,
-        previous.toAccountId,
-        tx.fromAccountId,
-        tx.toAccountId,
+        ...previous.accountIds,
+        ...tx.accountIds,
       ]);
     }
     await _refreshTransactionProjection(queueSync: true);
@@ -7727,7 +7736,7 @@ class AppController extends ChangeNotifier {
     if (previous == null) {
       await database.enqueueRowsForTable('accounts');
     } else {
-      await _enqueueTouchedTransactionAccounts([previous.fromAccountId, previous.toAccountId]);
+      await _enqueueTouchedTransactionAccounts(previous.accountIds);
     }
     await _refreshTransactionProjection(queueSync: true);
   }
@@ -11029,18 +11038,32 @@ _YutakaSnackKind _snackKindFor(String message) {
   return _YutakaSnackKind.info;
 }
 
-void _showRichSnack(BuildContext context, String message, _YutakaSnackKind kind, {String? titleOverride, OverlayState? overlayOverride}) {
-  final overlay = overlayOverride ?? Overlay.maybeOf(context, rootOverlay: true);
+void _showRichSnack(BuildContext context, String message, _YutakaSnackKind kind, {
+  String? titleOverride, OverlayState? overlayOverride,
+  String? actionLabel, AsyncCallback? onAction, Duration? visibleDuration,
+}) {
+  final overlay = overlayOverride ?? Overlay.maybeOf(context, rootOverlay: true) ?? _yutakaNavigatorKey.currentState?.overlay;
   final messenger = ScaffoldMessenger.maybeOf(context);
   if (overlay == null) {
-    messenger?.hideCurrentSnackBar();
-    messenger?.hideCurrentMaterialBanner();
-    messenger?.showSnackBar(
+    if (messenger == null) { return; }
+    messenger.hideCurrentSnackBar();
+    messenger.hideCurrentMaterialBanner();
+    final fallback = messenger.showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
+        duration: visibleDuration ?? const Duration(seconds: 4),
         content: Text(message),
+        action: actionLabel != null && onAction != null
+            ? SnackBarAction(label: actionLabel, onPressed: () { onAction(); })
+            : null,
       ),
     );
+    if (onAction != null) {
+      final timer = Timer(visibleDuration ?? const Duration(seconds: 8), () {
+        if (messenger.mounted) { fallback.close(); }
+      });
+      fallback.closed.then((_) => timer.cancel());
+    }
     return;
   }
 
@@ -11057,7 +11080,7 @@ void _showRichSnack(BuildContext context, String message, _YutakaSnackKind kind,
   };
   // Longer messages need time to read after the entrance animation.
   final minimumMilliseconds = kind == _YutakaSnackKind.failure ? 5000 : 3600;
-  final duration = Duration(
+  final duration = visibleDuration ?? Duration(
     milliseconds: (message.runes.length * 55).clamp(minimumMilliseconds, 15000).toInt(),
   );
 
@@ -11069,6 +11092,8 @@ void _showRichSnack(BuildContext context, String message, _YutakaSnackKind kind,
       color: color,
       contentType: contentType,
       visibleDuration: duration,
+      actionLabel: actionLabel,
+      onAction: onAction,
       onDismissed: () {
         if (_activeYutakaSnackEntry.value == entry) {
           _activeYutakaSnackEntry.value = null;
@@ -11089,6 +11114,8 @@ class _YutakaTopFeedbackBanner extends StatefulWidget {
     required this.contentType,
     required this.visibleDuration,
     required this.onDismissed,
+    this.actionLabel,
+    this.onAction,
   });
 
   final String title;
@@ -11097,6 +11124,8 @@ class _YutakaTopFeedbackBanner extends StatefulWidget {
   final ContentType contentType;
   final Duration visibleDuration;
   final VoidCallback onDismissed;
+  final String? actionLabel;
+  final AsyncCallback? onAction;
 
   @override
   State<_YutakaTopFeedbackBanner> createState() => _YutakaTopFeedbackBannerState();
@@ -11107,6 +11136,7 @@ class _YutakaTopFeedbackBannerState extends State<_YutakaTopFeedbackBanner>
   late final AnimationController _controller;
   Timer? _hideTimer;
   bool _closing = false;
+  bool _actionUsed = false;
 
   IconData get _icon {
     if (widget.contentType == ContentType.failure) return Icons.error_outline_rounded;
@@ -11137,10 +11167,25 @@ class _YutakaTopFeedbackBannerState extends State<_YutakaTopFeedbackBanner>
     if (_closing || !mounted) return;
     _closing = true;
     _hideTimer?.cancel();
-    if (!MediaQuery.of(context).disableAnimations) {
-      await _controller.reverse();
+    if (!MediaQuery.of(context).disableAnimations && TickerMode.of(context)) {
+      try {
+        // Dismissal must finish even if a route transition mutes its ticker.
+        await _controller.reverse().orCancel.timeout(const Duration(milliseconds: 400));
+      } on TimeoutException {
+        // The deadline still removes the overlay below.
+      } on TickerCanceled {
+        return;
+      }
     }
     if (mounted) widget.onDismissed();
+  }
+
+  Future<void> _runAction() async {
+    if (_actionUsed || _closing) { return; }
+    _actionUsed = true;
+    final action = widget.onAction;
+    await _dismiss();
+    if (action != null) { await action(); }
   }
 
   @override
@@ -11226,6 +11271,8 @@ class _YutakaTopFeedbackBannerState extends State<_YutakaTopFeedbackBanner>
                   ],
                 ),
               ),
+              if (widget.actionLabel != null && widget.onAction != null)
+                TextButton(onPressed: _runAction, child: Text(widget.actionLabel!)),
               const SizedBox(width: 6),
               SizedBox(
                 width: 36,
@@ -11279,13 +11326,14 @@ class _YutakaTopFeedbackBannerState extends State<_YutakaTopFeedbackBanner>
   }
 }
 
-void showSnack(BuildContext context, String message) {
+void showSnack(BuildContext context, String message, {String? actionLabel, AsyncCallback? onAction, Duration? visibleDuration}) {
+  assert((actionLabel == null) == (onAction == null));
   final trimmedMessage = message.trim();
   if (trimmedMessage.isEmpty) return;
 
   final kind = _snackKindFor(trimmedMessage);
-  if (kind != _YutakaSnackKind.info && ScaffoldMessenger.maybeOf(context) != null) {
-    _showRichSnack(context, trimmedMessage, kind);
+  if (onAction != null || (kind != _YutakaSnackKind.info && ScaffoldMessenger.maybeOf(context) != null)) {
+    _showRichSnack(context, trimmedMessage, kind, actionLabel: actionLabel, onAction: onAction, visibleDuration: visibleDuration);
     return;
   }
 
@@ -17972,6 +18020,7 @@ Future<void> _duplicateTransaction(BuildContext context, MoneyTransaction tx) as
     notes: tx.notes,
     categoryId: tx.categoryId,
     categorySplits: tx.categorySplits,
+    accountSplits: tx.accountSplits,
     fromAccountId: tx.fromAccountId,
     toAccountId: tx.toAccountId,
     imagePath: tx.imagePath,
@@ -17993,7 +18042,7 @@ Future<bool> _confirmDeleteTransaction(BuildContext context, MoneyTransaction tx
       content: Text(
         tx.isLoanTransaction
             ? 'This transaction is linked to a loan. Deleting it will update the linked loan record.'
-            : 'This transaction will be removed and the account balance will be recalculated.',
+            : 'This transaction will be removed and its account balances will be recalculated.',
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
@@ -18009,17 +18058,16 @@ Future<bool> _confirmDeleteTransaction(BuildContext context, MoneyTransaction tx
   try {
     await state.moveTransactionToTrash(tx.id);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Transaction deleted.'), duration: const Duration(seconds: 8),
-        action: SnackBarAction(label: 'Undo', onPressed: () async {
+      showSnack(context, 'Transaction deleted.', visibleDuration: const Duration(seconds: 8),
+        actionLabel: 'Undo', onAction: () async {
           try {
             await state.restoreDeletedTransaction(tx.id);
           } catch (error) {
             final current = _yutakaNavigatorKey.currentContext;
             if (current != null && current.mounted) { showSnack(current, error.toString().replaceFirst('Bad state: ', '')); }
           }
-        }),
-      ));
+        },
+      );
     }
     return true;
   } catch (error) {
@@ -18104,6 +18152,8 @@ class TransactionTile extends StatelessWidget {
                   const SizedBox(height: 4),
                   if (categoryLabel != null || tx.categorySplits.isNotEmpty)
                     Text(tx.categorySplits.isEmpty ? categoryLabel! : 'Split • ${tx.categoryAmounts.keys.map((id) => state.categoryOf(id)?.name ?? 'Category').join(' + ')}', maxLines: 1, overflow: TextOverflow.ellipsis, style: detailStyle),
+                  if (tx.accountSplits.isNotEmpty)
+                    Text(transactionAccountSummary(state, tx), maxLines: 2, overflow: TextOverflow.ellipsis, style: detailStyle),
                   Wrap(
                     spacing: 12,
                     runSpacing: 2,
@@ -18638,6 +18688,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
   bool _amountHasFocus = false;
   bool busy = false;
   Map<String, double> categorySplits = {};
+  Map<String, double> accountSplits = {};
 
   @override
   void initState() {
@@ -18648,6 +18699,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
     _transactionId = widget.transaction?.id ?? _uuid.v4();
     if (tx != null) {
       categorySplits = Map.of(tx.categorySplits);
+      accountSplits = Map.of(tx.accountSplits);
       title.text = tx.title;
       notes.text = tx.notes;
       amount.text = tx.baseAmount.toStringAsFixed(2);
@@ -18679,6 +18731,22 @@ class _TransactionEditorState extends State<TransactionEditor> {
   void _dismissAmountFocus() {
     amountFocus.unfocus();
     FocusScope.of(context).unfocus();
+  }
+
+  Future<void> _editAccountSplits() async {
+    _dismissAmountFocus();
+    final value = double.tryParse(amount.text) ?? 0;
+    if (!value.isFinite || value <= 0) {
+      showSnack(context, 'Enter the total amount before splitting.');
+      return;
+    }
+    final selected = await showTransactionSplits(context, type: type, total: value,
+        initial: accountSplits, splitAccounts: true);
+    if (!mounted || selected == null) { return; }
+    setState(() {
+      accountSplits = selected;
+      if (selected.isNotEmpty) { fromAccountId = selected.keys.first; }
+    });
   }
 
   String _serviceChargeSummary(AppController state) {
@@ -18757,6 +18825,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
                 setState(() {
                   type = v;
                   categorySplits = {};
+                  if (v == MoneyTransactionType.transfer) { accountSplits = {}; }
                   if (type == MoneyTransactionType.income || type == MoneyTransactionType.expense) {
                     final targetType = type == MoneyTransactionType.income ? CategoryType.income : CategoryType.expense;
                     final newCategories = state.categories.where((c) => c.type == targetType).toList();
@@ -18942,14 +19011,25 @@ class _TransactionEditorState extends State<TransactionEditor> {
                 final value = double.tryParse(amount.text) ?? 0;
                 final draft = MoneyTransaction(id: 'shortcut', type: type, amount: value, title: title.text.trim(),
                     notes: notes.text.trim(), categoryId: categoryId ?? '', fromAccountId: fromAccountId!, toAccountId: toAccountId,
-                    categorySplits: categorySplits, serviceChargeEnabled: serviceChargeEnabled,
+                    categorySplits: categorySplits, accountSplits: accountSplits, serviceChargeEnabled: serviceChargeEnabled,
                     serviceChargeMode: serviceChargeMode, serviceChargeValue: serviceChargeValue, createdOn: now, updatedOn: now);
                 await saveShortcutDialog(context, draft);
               }, icon: const Icon(Icons.bolt_rounded, size: 18), label: const Text('Save shortcut'))),
             ]),
             const SizedBox(height: 12),
           ],
-          AppleSelectionField(
+          if (accountSplits.isNotEmpty)
+            ExpressiveCard(padding: const EdgeInsets.all(14), child: Row(children: [
+              const Icon(Icons.call_split_rounded, color: kSleekAccent),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Split accounts', style: TextStyle(fontWeight: FontWeight.w800)),
+                Text(accountSplits.entries.map((entry) => '${state.accountOf(entry.key)?.name ?? 'Choose account'}: ${state.format(entry.value)}').join(' + '),
+                  style: Theme.of(context).textTheme.bodySmall),
+              ])),
+            ]))
+          else
+            AppleSelectionField(
             label: type == MoneyTransactionType.transfer ? 'From account' : 'Account',
             option: fromAccount == null ? null : optionFromAccount(fromAccount, state),
             emptyText: 'Choose account',
@@ -18976,6 +19056,14 @@ class _TransactionEditorState extends State<TransactionEditor> {
               }
             },
           ),
+          if (!isLoanTransaction && type != MoneyTransactionType.transfer) ...[
+            const SizedBox(height: 8),
+            Align(alignment: Alignment.centerRight, child: OutlinedButton.icon(
+              onPressed: busy ? null : _editAccountSplits,
+              icon: const Icon(Icons.call_split_rounded, size: 18),
+              label: Text(accountSplits.isEmpty ? 'Split accounts' : 'Edit account split'),
+            )),
+          ],
           if (type == MoneyTransactionType.transfer) ...[
             const SizedBox(height: 12),
             AppleSelectionField(
@@ -19130,6 +19218,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
                             title: type == MoneyTransactionType.transfer ? '' : transactionTitle,
                             notes: notes.text.trim(),
                             categorySplits: categorySplits,
+                            accountSplits: accountSplits,
                             categoryId: type == MoneyTransactionType.transfer ? '' : (categoryId ?? ''),
                             fromAccountId: fromAccountId!,
                             toAccountId: type == MoneyTransactionType.transfer ? toAccountId : null,
@@ -19734,11 +19823,12 @@ List<BudgetHealthItem> budgetHealthItemsForPeriod(AppController state, Financial
     final txs = state.transactions.where((tx) {
       if (!tx.countsAsExpense) return false;
       if (!isInsideFinancialPeriod(tx.createdOn, start, end)) return false;
-      if (!budget.allAccountsSelected && !budget.accountIds.contains(tx.fromAccountId)) return false;
+      if (!budget.allAccountsSelected && !tx.accountAmounts.keys.any(budget.accountIds.contains)) { return false; }
       if (!budget.allCategoriesSelected && !tx.categoryAmounts.keys.any(budget.categoryIds.contains)) { return false; }
       return true;
     }).toList();
-    final spent = txs.fold<double>(0, (sum, tx) => sum + (budget.allCategoriesSelected ? tx.amount : tx.amountForCategories(budget.categoryIds)));
+    final spent = txs.fold<double>(0, (sum, tx) => sum + tx.amountForScope(accountIds: budget.allAccountsSelected ? null : budget.accountIds,
+          categoryIds: budget.allCategoriesSelected ? null : budget.categoryIds));
     final categoryNames = budget.allCategoriesSelected
         ? 'All expense categories'
         : budget.categoryIds.map((id) => state.categoryOf(id)?.name ?? 'Category').take(3).join(', ');
