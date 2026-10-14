@@ -14,7 +14,7 @@ void main() {
     final backup = File('lib/main.dart').readAsStringSync();
 
     expect(pubspec, contains('name: yutaka'));
-    expect(pubspec, contains('version: 1.0.1302+346'));
+    expect(pubspec, contains('version: 1.0.1305+349'));
     expect(config, contains("const appTitle = 'Yutaka';"));
     expect(updates, contains("const updateGithubOwner = 'Chowdhury-Siam';"));
     expect(updates, contains("const updateGithubRepo = 'Yutaka';"));
