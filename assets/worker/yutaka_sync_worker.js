@@ -119,11 +119,27 @@ var require_promise_limit = __commonJS({
 
 // src/transaction-splits.ts
 function transactionCategoryAmounts(row) {
+  return transactionAllocations(row, "category_splits", "category_id");
+}
+__name(transactionCategoryAmounts, "transactionCategoryAmounts");
+function transactionAccountAmounts(row) {
+  return transactionAllocations(row, "account_splits", "from_account_id");
+}
+__name(transactionAccountAmounts, "transactionAccountAmounts");
+function transactionScopeAmount(row, accounts, categories) {
   const amount = Number(row.amount ?? 0);
-  const fallback = /* @__PURE__ */ new Map([[String(row.category_id ?? ""), amount]]);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  const accountAmount = accounts === null ? amount : [...transactionAccountAmounts(row)].filter(([id]) => accounts.has(id)).reduce((sum, [, share]) => sum + share, 0);
+  const categoryAmount = categories === null ? amount : [...transactionCategoryAmounts(row)].filter(([id]) => categories.has(id)).reduce((sum, [, share]) => sum + share, 0);
+  return accountAmount * categoryAmount / amount;
+}
+__name(transactionScopeAmount, "transactionScopeAmount");
+function transactionAllocations(row, key, fallbackKey) {
+  const amount = Number(row.amount ?? 0);
+  const fallback = /* @__PURE__ */ new Map([[String(row[fallbackKey] ?? ""), amount]]);
   if (row.type === "transfer" || row.linked_entity_type === "loans" || row.linked_entity_type === "loan_payments") return fallback;
   try {
-    const split = typeof row.category_splits === "string" ? JSON.parse(row.category_splits) : row.category_splits;
+    const split = typeof row[key] === "string" ? JSON.parse(row[key]) : row[key];
     if (!split || typeof split !== "object" || Array.isArray(split)) return fallback;
     const entries = Object.entries(split);
     if (!entries.length || entries.length > 20 || entries.some(([id, value]) => !id || typeof value !== "number" || !Number.isFinite(value) || value <= 0)) return fallback;
@@ -139,7 +155,7 @@ function transactionCategoryAmounts(row) {
     return fallback;
   }
 }
-__name(transactionCategoryAmounts, "transactionCategoryAmounts");
+__name(transactionAllocations, "transactionAllocations");
 
 // node_modules/@libsql/core/lib-esm/api.js
 var LibsqlError = class extends Error {
@@ -7483,7 +7499,7 @@ async function buildScheduledAnalyticsPdf(db, userId, settings, nowMs) {
         const amount = rowNumber(tx, "amount");
         const sign = tx.type === "income" ? "+" : tx.type === "expense" ? "-" : "";
         const title = cleanText(tx.title, 120) || categoryName(tx.category_id);
-        const route = tx.type === "transfer" ? `${accountName(tx.from_account_id)} -> ${accountName(tx.to_account_id)}` : accountName(tx.from_account_id);
+        const route = tx.type === "transfer" ? `${accountName(tx.from_account_id)} -> ${accountName(tx.to_account_id)}` : [...transactionAccountAmounts(tx)].map(([id, share]) => tx.account_splits && tx.account_splits !== "{}" ? `${accountName(id)}: ${scheduledAnalyticsMoney(currencyCode, share)}` : accountName(id)).join(" + ");
         lines.push(`${date} | ${type} | ${sign}${scheduledAnalyticsMoney(currencyCode, amount)} | ${title}`);
         const categoryDescription = tx.category_splits ? [...transactionCategoryAmounts(tx)].map(([id, share]) => `${categoryName(id)}: ${scheduledAnalyticsMoney(currencyCode, share)}`).join(" + ") : categoryName(tx.category_id);
         lines.push(`Category: ${categoryDescription} | Account: ${route}${Number(tx.exclude_from_reports ?? 0) === 1 ? " | Excluded from reports" : ""}`);
@@ -7573,8 +7589,7 @@ async function buildScheduledAnalyticsPdf(db, userId, settings, nowMs) {
       for (const tx of current.txs) {
         const when = transactionEffectiveTimestamp(tx);
         if (when < monthStart || when >= monthEnd || tx.type !== "expense" || Number(tx.exclude_from_reports ?? 0) === 1) continue;
-        if (!allAccounts && !allowedAccounts.has(String(tx.from_account_id ?? ""))) continue;
-        budgetSpent += allCategories ? rowNumber(tx, "amount") : [...transactionCategoryAmounts(tx)].filter(([id]) => allowedCategories.has(id)).reduce((sum, [, share]) => sum + share, 0);
+        budgetSpent += transactionScopeAmount(tx, allAccounts ? null : allowedAccounts, allCategories ? null : allowedCategories);
       }
     }
     lines.push("Yutaka Analytics");
