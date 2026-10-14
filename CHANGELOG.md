@@ -1,3 +1,9 @@
+## 1.0.1306+350
+
+- Move category/account split actions into their selection fields and active split cards. Use compact, labeled split icons with 48-pixel touch targets; keep the existing category/account selectors and split popups.
+- Move Save shortcut below the main Save button. Remove the standalone split/shortcut row and separate account-split row to shorten the editor.
+- Update the account-split editor regression for the embedded action and bottom shortcut placement. Update app metadata; keep Worker version 1.0.1305 unchanged.
+
 ## 1.0.1305+349
 
 - Fix the local-first transaction test to expect complete affected-account sets after account splitting, and cover ordinary, split, changed-split, and transfer account sets. App and Worker code and versions are unchanged by this test-only correction.
