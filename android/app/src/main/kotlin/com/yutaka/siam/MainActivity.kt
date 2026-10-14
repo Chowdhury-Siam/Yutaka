@@ -19,6 +19,12 @@ import io.flutter.plugin.common.MethodChannel
 import java.util.TimeZone
 
 class MainActivity: FlutterFragmentActivity() {
+    private val deviceAccessChannelName = "com.yutaka.siam/device_access"
+    private var deviceAccessBridge: DeviceAccessBridge? = null
+    private var deviceAccessChannel: MethodChannel? = null
+    private val deviceCredentialLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        deviceAccessBridge?.complete(it.resultCode == Activity.RESULT_OK)
+    }
     private val updaterChannel = "com.yutaka.siam/updater"
     private val updateBackgroundChannel = "com.yutaka.siam/update_background"
     private val backupStorageChannel = "com.yutaka.siam/backup_storage"
@@ -36,8 +42,23 @@ class MainActivity: FlutterFragmentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val action = intent.getStringExtra(YutakaWidgetProvider.QUICK_ACTION)
+        if (action != null && deviceAccessChannel != null) {
+            deviceAccessChannel?.invokeMethod("quickAction", action)
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val bridge = DeviceAccessBridge(this) { deviceCredentialLauncher.launch(it) }
+        deviceAccessBridge = bridge
+        bridge.applyPrivacy()
+        deviceAccessChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, deviceAccessChannelName).also {
+            it.setMethodCallHandler(bridge::handle)
+        }
         NativeUpdateCheckScheduler.sync(this, BuildConfig.DISTRIBUTION == "direct")
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updateBackgroundChannel).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -177,6 +198,7 @@ class MainActivity: FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        deviceAccessBridge?.dispose()
         if (BuildConfig.DISTRIBUTION == "play") {
             try {
                 playUpdateManager.unregisterListener(flexibleUpdateListener)
