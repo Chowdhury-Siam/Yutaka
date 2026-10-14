@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1306" date="2026-10-15">
+      <description><p>Place split controls inside Category and Account fields and move Save shortcut below Save.</p></description>
+    </release>
     <release version="1.0.1305" date="2026-10-15">
       <description><p>Split income and expense transactions across accounts with matching totals, proportional fees, and balance-safe edits and undo.</p></description>
     </release>
