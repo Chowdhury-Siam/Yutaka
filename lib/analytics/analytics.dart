@@ -325,8 +325,9 @@ _AnalyticsCore _buildAnalyticsCore(AppController state, AnalyticsRange range) {
     for (final tx in transactions) {
       if (!tx.countsAsExpense) continue;
       if (!_analyticsDateInside(tx.listOn, monthRange)) continue;
-      if (!budget.allAccountsSelected && !budget.accountIds.contains(tx.fromAccountId)) continue;
-      budgetSpent += budget.allCategoriesSelected ? tx.amount : tx.amountForCategories(budget.categoryIds);
+      if (!budget.allAccountsSelected && !tx.accountAmounts.keys.any(budget.accountIds.contains)) { continue; }
+      budgetSpent += tx.amountForScope(accountIds: budget.allAccountsSelected ? null : budget.accountIds,
+          categoryIds: budget.allCategoriesSelected ? null : budget.categoryIds);
     }
   }
 
@@ -569,7 +570,8 @@ class AnalyticsPdfService {
     pw.Widget transactionEntry(MoneyTransaction tx) {
       final savedTitle = tx.title.trim();
       final category = categoryName(tx);
-      final from = accountName(tx.fromAccountId);
+      final from = tx.accountSplits.isEmpty ? accountName(tx.fromAccountId) : tx.accountAmounts.entries
+          .map((entry) => '${accountName(entry.key)}: ${_analyticsPdfMoney(state, entry.value)}').join(' + ');
       final to = tx.toAccountId == null ? null : accountName(tx.toAccountId!);
       final title = tx.type == MoneyTransactionType.transfer
           ? '$from -> ${to ?? 'Unknown account'}'
@@ -697,7 +699,7 @@ String _analyticsReportMoney(AppController state, double value) {
 String _analyticsTransactionTitle(AppController state, MoneyTransaction tx) {
   final savedTitle = tx.title.trim();
   if (tx.type == MoneyTransactionType.transfer) {
-    final from = state.accountOf(tx.fromAccountId)?.name ?? 'Unknown account';
+    final from = transactionAccountSummary(state, tx);
     final to = tx.toAccountId == null ? 'Unknown account' : (state.accountOf(tx.toAccountId!)?.name ?? 'Unknown account');
     return '$from -> $to';
   }
@@ -735,7 +737,7 @@ Uint8List _analyticsTextReport(AppController state, AnalyticsSnapshot snapshot, 
         final start = DateFormat('yyyy-MM-dd HH:mm').format(tx.createdOn);
         final end = DateFormat('yyyy-MM-dd HH:mm').format(tx.effectiveEndOn);
         final category = transactionCategorySummary(state, tx);
-        final from = state.accountOf(tx.fromAccountId)?.name ?? 'Unknown account';
+        final from = transactionAccountSummary(state, tx);
         final to = tx.toAccountId == null ? '' : (state.accountOf(tx.toAccountId!)?.name ?? 'Unknown account');
         final signedAmount = switch (tx.type) {
           MoneyTransactionType.income => tx.amount,
@@ -1023,7 +1025,7 @@ Uint8List _analyticsXlsxReport(AppController state, AnalyticsSnapshot snapshot, 
         state.currencyCode,
         _analyticsTransactionTitle(state, tx),
         transactionCategorySummary(state, tx),
-        state.accountOf(tx.fromAccountId)?.name ?? 'Unknown account',
+        transactionAccountSummary(state, tx),
         tx.toAccountId == null ? '' : (state.accountOf(tx.toAccountId!)?.name ?? 'Unknown account'),
         tx.notes.trim(),
         tx.excludeFromReports,
