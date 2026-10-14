@@ -306,7 +306,8 @@ void main() {
       ))))));
     await tester.tap(find.text('Open editor'));
     await tester.pumpAndSettle();
-    final splitButton = find.widgetWithText(OutlinedButton, 'Split accounts');
+    final splitButton = find.byTooltip('Split accounts');
+    expect(find.ancestor(of: splitButton, matching: find.byType(AppleSelectionField)), findsOneWidget);
     await tester.ensureVisible(splitButton);
     await tester.tap(splitButton);
     await tester.pumpAndSettle();
@@ -320,10 +321,12 @@ void main() {
     await tester.enterText(bank, '40');
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    expect(find.text('Edit account split'), findsOneWidget);
+    expect(find.byTooltip('Edit account split'), findsOneWidget);
     expect(controller.transactions, isEmpty);
     final saveFinder = find.widgetWithText(FilledButton, 'Save');
-    await tester.ensureVisible(saveFinder);
+    final shortcutButton = find.widgetWithText(OutlinedButton, 'Save shortcut');
+    await tester.ensureVisible(shortcutButton);
+    expect(tester.getTopLeft(shortcutButton).dy, greaterThan(tester.getBottomLeft(saveFinder).dy));
     final save = tester.widget<FilledButton>(saveFinder).onPressed!;
     await tester.runAsync(() async { await (Function.apply(save, const []) as Future<void>); });
     await tester.pumpAndSettle();
