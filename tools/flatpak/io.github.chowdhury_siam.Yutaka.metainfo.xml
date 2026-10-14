@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1300" date="2026-10-15">
+      <description><p>Add transaction search, saved shortcuts, undo deletion, category splits, and Android widget and device lock.</p></description>
+    </release>
     <release version="1.0.1299" date="2026-10-15">
       <description><p>Refine the loan type popup with outlined choices, green icon tiles, and subtle press feedback.</p></description>
     </release>
