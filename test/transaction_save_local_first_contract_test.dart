@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yutaka/models.dart';
 
 void main() {
   final source = File('lib/main.dart').readAsStringSync();
@@ -55,16 +56,27 @@ void main() {
       'Future<void> saveBudget(Budget budget) async {',
     );
 
-    expect(update, contains('previous.fromAccountId'));
-    expect(update, contains('previous.toAccountId'));
-    expect(update, contains('tx.fromAccountId'));
-    expect(update, contains('tx.toAccountId'));
+    expect(update, contains('await _enqueueTouchedTransactionAccounts(['));
+    expect(update, contains('...previous.accountIds'));
+    expect(update, contains('...tx.accountIds'));
     expect(update, contains('await _refreshTransactionProjection(queueSync: true);'));
     expect(update, isNot(contains('await reload(')));
 
-    expect(delete, contains('previous.fromAccountId'));
-    expect(delete, contains('previous.toAccountId'));
+    expect(delete, contains('await _enqueueTouchedTransactionAccounts(previous.accountIds);'));
     expect(delete, contains('await _refreshTransactionProjection(queueSync: true);'));
     expect(delete, isNot(contains('await reload(')));
+  });
+
+  test('touched accounts include ordinary, split, and transfer accounts', () {
+    final now = DateTime.utc(2026, 10, 15);
+    final ordinary = MoneyTransaction(id: 'ordinary', type: MoneyTransactionType.expense,
+      amount: 100, notes: '', categoryId: 'food', fromAccountId: 'cash', createdOn: now, updatedOn: now);
+    expect(ordinary.accountIds, {'cash'});
+    final split = ordinary.copyWith(accountSplits: {'cash': 60, 'bank': 40});
+    expect(split.accountIds, {'cash', 'bank'});
+    final changed = split.copyWith(fromAccountId: 'card', accountSplits: {'card': 50, 'bank': 50});
+    expect({...split.accountIds, ...changed.accountIds}, {'cash', 'bank', 'card'});
+    final transfer = ordinary.copyWith(type: MoneyTransactionType.transfer, toAccountId: 'savings');
+    expect(transfer.accountIds, {'cash', 'savings'});
   });
 }
