@@ -213,7 +213,11 @@ Future<void> saveShortcutDialog(BuildContext context, MoneyTransaction draft, {T
       child: Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text(existing == null ? 'Save shortcut' : 'Rename shortcut', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
-        TextField(controller: name, autofocus: true, maxLength: 60, decoration: const InputDecoration(labelText: 'Shortcut name')),
+        TextField(controller: name, autofocus: true, maxLength: 60,
+          contextMenuBuilder: yutakaTextFieldContextMenu,
+          enableInteractiveSelection: true,
+          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+          decoration: const InputDecoration(labelText: 'Shortcut name')),
         const SizedBox(height: 12),
         Row(children: [
           Expanded(child: TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))),
@@ -360,6 +364,9 @@ class _TransactionSplitsPopupState extends State<_TransactionSplitsPopup> {
       Flexible(child: SingleChildScrollView(child: Column(children: categories.map((category) {
         final controller = amounts.putIfAbsent(category.id, TextEditingController.new);
         return Padding(padding: const EdgeInsets.only(bottom: 10), child: TextField(
+          contextMenuBuilder: yutakaTextFieldContextMenu,
+          enableInteractiveSelection: true,
+          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
           controller: controller, keyboardType: const TextInputType.numberWithOptions(decimal: true),
           onChanged: (_) => setState(() => error = null), decoration: InputDecoration(labelText: category.name,
               hintText: 'Leave blank to skip', prefixIcon: Icon(iconFor(category.iconName))),
