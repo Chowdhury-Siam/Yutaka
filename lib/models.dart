@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 // -----------------------------------------------------------------------------
@@ -518,6 +519,23 @@ String subscriptionFrequencyLabel(SubscriptionFrequency frequency) {
   }
 }
 
+Map<String, double> decodeTransactionSplits(Object? value) {
+  try {
+    final decoded = value is String ? jsonDecode(value) : value;
+    if (decoded is! Map) { return const {}; }
+    final result = <String, double>{};
+    for (final entry in decoded.entries) {
+      if (entry.key is! String || entry.value is! num) { return const {}; }
+      final amount = (entry.value as num).toDouble();
+      if (!amount.isFinite || amount <= 0) { return const {}; }
+      result[entry.key as String] = amount;
+    }
+    return result;
+  } on FormatException {
+    return const {};
+  }
+}
+
 class MoneyTransaction {
   MoneyTransaction({
     required this.id,
@@ -529,6 +547,7 @@ class MoneyTransaction {
     this.serviceChargeValue = 0,
     this.serviceChargeAmount = 0,
     this.title = '',
+    this.categorySplits = const {},
     required this.notes,
     required this.categoryId,
     required this.fromAccountId,
@@ -554,6 +573,8 @@ class MoneyTransaction {
   final double serviceChargeValue;
   final double serviceChargeAmount;
   final String title;
+  /// Base-amount allocations. Fees are distributed proportionally in reports.
+  final Map<String, double> categorySplits;
   final String notes;
   final String categoryId;
   final String fromAccountId;
@@ -565,6 +586,44 @@ class MoneyTransaction {
   final DateTime createdOn;
   final DateTime? endOn;
   final DateTime updatedOn;
+
+  Map<String, double> get categoryAmounts {
+    if (categorySplits.isEmpty || type == MoneyTransactionType.transfer || isLoanTransaction) {
+      return {categoryId: amount};
+    }
+    final total = categorySplits.values.fold<double>(0, (sum, value) => sum + value);
+    if (total <= 0 || !total.isFinite) { return {categoryId: amount}; }
+    final result = <String, double>{};
+    var allocated = 0.0;
+    final entries = categorySplits.entries.toList();
+    for (var i = 0; i < entries.length; i++) {
+      final value = i == entries.length - 1 ? amount - allocated : amount * entries[i].value / total;
+      result[entries[i].key] = value;
+      allocated += value;
+    }
+    return result;
+  }
+
+  double amountForCategories(Iterable<String> ids) {
+    final selected = ids.toSet();
+    return categoryAmounts.entries.where((entry) => selected.contains(entry.key))
+        .fold<double>(0, (sum, entry) => sum + entry.value);
+  }
+
+  void validateAmounts() {
+    if (!amount.isFinite || amount <= 0 || !baseAmount.isFinite || baseAmount <= 0) {
+      throw StateError('Enter a valid amount.');
+    }
+    if (categorySplits.isEmpty) { return; }
+    if (type == MoneyTransactionType.transfer || isLoanTransaction || categorySplits.length > 20 ||
+        categorySplits.entries.any((entry) => entry.key.isEmpty || !entry.value.isFinite || entry.value <= 0)) {
+      throw StateError('Split transactions need valid income or expense categories and positive amounts.');
+    }
+    final total = categorySplits.values.fold<double>(0, (sum, value) => sum + value);
+    if ((total - baseAmount).abs() > .005) {
+      throw StateError('Split amounts must equal the amount before any service charge.');
+    }
+  }
 
   bool get countsAsIncome => !excludeFromReports && type == MoneyTransactionType.income;
   bool get countsAsExpense => !excludeFromReports && type == MoneyTransactionType.expense;
@@ -590,6 +649,7 @@ class MoneyTransaction {
     double? serviceChargeValue,
     double? serviceChargeAmount,
     String? title,
+    Map<String, double>? categorySplits,
     String? notes,
     String? categoryId,
     String? fromAccountId,
@@ -611,6 +671,7 @@ class MoneyTransaction {
         serviceChargeValue: serviceChargeValue ?? this.serviceChargeValue,
         serviceChargeAmount: serviceChargeAmount ?? this.serviceChargeAmount,
         title: title ?? this.title,
+        categorySplits: categorySplits ?? this.categorySplits,
         notes: notes ?? this.notes,
         categoryId: categoryId ?? this.categoryId,
         fromAccountId: fromAccountId ?? this.fromAccountId,
@@ -634,6 +695,7 @@ class MoneyTransaction {
         'service_charge_value': serviceChargeValue,
         'service_charge_amount': serviceChargeAmount,
         'title': title,
+        'category_splits': jsonEncode(categorySplits),
         'notes': notes,
         'category_id': categoryId,
         'from_account_id': fromAccountId,
@@ -659,6 +721,7 @@ class MoneyTransaction {
         serviceChargeValue: (map['service_charge_value'] as num? ?? 0).toDouble(),
         serviceChargeAmount: (map['service_charge_amount'] as num? ?? 0).toDouble(),
         title: map['title'] as String? ?? '',
+        categorySplits: decodeTransactionSplits(map['category_splits']),
         notes: map['notes'] as String? ?? '',
         categoryId: map['category_id'] as String? ?? '',
         fromAccountId: map['from_account_id'] as String? ?? '',
