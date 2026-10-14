@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1301" date="2026-10-15">
+      <description><p>Fix transaction-tool text input controls and device-lock regression checks.</p></description>
+    </release>
     <release version="1.0.1300" date="2026-10-15">
       <description><p>Add transaction search, saved shortcuts, undo deletion, category splits, and Android widget and device lock.</p></description>
     </release>
