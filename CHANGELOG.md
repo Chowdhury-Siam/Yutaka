@@ -1,3 +1,12 @@
+## 1.0.1300+344
+
+- Add transaction search across titles, notes, amounts, accounts, split categories, dates, and linked loan contacts while respecting current filters.
+- Add saved transaction shortcuts with rename/delete management, preference backup and sync, and fresh reviewed drafts on every use.
+- Add atomic transaction deletion with Undo and a device-local Recently deleted list retained for 30 days. Restore transaction and loan-payment links with their balance effects once; reject unsafe restores and clear local trash when switching accounts.
+- Add income/expense category splits to a single transaction. Validate allocation totals, distribute service charges proportionally, and include allocations in budgets, analysis, reports, category filters, merges, backups, and Worker-generated reports. Migrate existing databases without resetting finance data.
+- Add an Android home-screen widget for today’s spending and Add expense, native fingerprint/device credential authentication, optional device-local app locking, hidden widget amounts while locked, and capture protection while locking is enabled.
+- Add transaction, widget-query, and Worker split-report regression coverage. Synchronize app/Worker release metadata and rebuild the embedded Worker deployment bundle.
+
 ## 1.0.1299+343
 
 - Restyle the New loan / Existing loan choices as dark outlined cards with green icon tiles, softer descriptions, and subtle press feedback. Keep native button keyboard and accessibility behavior and the existing loan flow.
