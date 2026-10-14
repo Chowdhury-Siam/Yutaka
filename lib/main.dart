@@ -17723,7 +17723,8 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppController>();
-    final txs = state.transactionListTransactions().where((tx) => transactionMatchesSearch(state, tx, search.text)).toList();
+    final visibleTransactions = state.transactionListTransactions();
+    final txs = visibleTransactions.where((tx) => transactionMatchesSearch(state, tx, search.text)).toList();
     final range = state.activeRange();
     final hasDateFilter = state.dateRangeType != DateRangeType.allTime;
     final hasTransactionFilters = state.filterAccountIds.isNotEmpty ||
@@ -17777,6 +17778,9 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
       child: ResponsiveListContent(
         header: [
           TextField(key: const ValueKey('transaction-search'), controller: search,
+            contextMenuBuilder: yutakaTextFieldContextMenu,
+            enableInteractiveSelection: true,
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(hintText: 'Search title, amount, account, category or person',
               prefixIcon: const Icon(Icons.search_rounded),
