@@ -109,11 +109,15 @@ void main() {
     ));
     await tester.tap(find.text('Add loan'));
     await tester.pumpAndSettle();
-    expect(find.text('Give from account'), findsOneWidget);
-    expect(find.text('New loan'), findsNWidgets(2));
+    expect(find.text('Choose loan type'), findsOneWidget);
+    expect(field('Person name'), findsNothing);
+    expect(find.text('Give from account'), findsNothing);
+    expect(find.text('New loan'), findsOneWidget);
     expect(find.text('New money'), findsNothing);
     await tester.tap(find.text('Existing loan'));
     await tester.pumpAndSettle();
+    expect(find.text('Choose loan type'), findsNothing);
+    expect(find.text('Existing loan'), findsOneWidget);
     expect(find.text('Give from account'), findsNothing);
     await tester.enterText(field('Person name'), 'Rohan');
     await tester.enterText(field('Amount still owed'), '200');
@@ -165,7 +169,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.accountOf('cash')!.amount, 900);
     expect(controller.transactions, hasLength(1));
-    // Setup's explicit Existing loan entry remains safe with the selector hidden.
+    // Setup's explicit Existing loan entry remains safe with the choices hidden.
     await tester.tap(find.text('Opening balance'));
     await tester.pumpAndSettle();
     expect(find.text('Existing loan'), findsOneWidget);
@@ -182,10 +186,54 @@ void main() {
     await tester.runAsync(() => controller.setLoanPreferences(showTypeOptions: true));
     await tester.tap(find.text('Add loan'));
     await tester.pumpAndSettle();
+    expect(find.text('Choose loan type'), findsOneWidget);
     expect(find.text('Existing loan'), findsOneWidget);
-    expect(find.text('New loan'), findsNWidgets(2));
+    expect(find.text('New loan'), findsOneWidget);
+    expect(field('Person name'), findsNothing);
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
+    expect(find.text('Choose loan type'), findsNothing);
+    expect(field('Person name'), findsNothing);
+    expect(controller.loans, hasLength(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('loan choice can be dismissed and new borrowing preserves its direction', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(ChangeNotifierProvider<AppController>.value(
+      value: controller,
+      child: MaterialApp(home: Scaffold(body: Builder(builder: (context) => TextButton(
+        onPressed: () => showLoanEditorSheet(context, defaultDirection: LoanDirection.borrowed),
+        child: const Text('Add loan'),
+      )))),
+    ));
+    await tester.tap(find.text('Add loan'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close loan type choice'));
+    await tester.pumpAndSettle();
+    expect(field('Person name'), findsNothing);
+    expect(controller.loans, isEmpty);
+    await tester.tap(find.text('Add loan'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New loan'));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose loan type'), findsNothing);
+    expect(find.text('Existing loan'), findsNothing);
+    expect(find.text('New loan'), findsOneWidget);
+    expect(find.text('Receive into account'), findsOneWidget);
+    expect(find.text('Give from account'), findsNothing);
+    await tester.enterText(field('Person name'), 'Rohan');
+    await tester.enterText(field('Amount'), '100');
+    final save = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Save loan')).onPressed!;
+    await tester.runAsync(() async {
+      await (Function.apply(save, const []) as Future<void>);
+    });
+    await tester.pumpAndSettle();
+    expect(controller.loans.single.direction, LoanDirection.borrowed);
+    expect(controller.loans.single.disbursalTransactionId, isNotNull);
+    expect(controller.accountOf('cash')!.amount, 1100);
+    expect(controller.transactions, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 

@@ -314,14 +314,83 @@ Future<LoanInterestConfiguration?> showLoanInterestConfiguration(
   }
 }
 
-Future<void> showLoanEditorSheet(BuildContext context, {Loan? loan, LoanDirection defaultDirection = LoanDirection.lent, bool existingLoan = false}) {
-  return showYutakaPopup<void>(
+Future<void> showLoanEditorSheet(BuildContext context, {Loan? loan, LoanDirection defaultDirection = LoanDirection.lent, bool existingLoan = false}) async {
+  var selectedExistingLoan = existingLoan;
+  if (loan == null && !existingLoan && context.read<AppController>().loanShowTypeOptions) {
+    final choice = await showYutakaPopup<bool>(
+      context,
+      maxWidth: 440,
+      maxHeight: 460,
+      child: const _LoanTypeChoicePopup(),
+    );
+    if (!context.mounted || choice == null) {
+      return;
+    }
+    selectedExistingLoan = choice;
+  }
+  if (!context.mounted) {
+    return;
+  }
+  await showYutakaPopup<void>(
     context,
     maxWidth: 600,
     maxHeight: 760,
     barrierDismissible: false,
-    child: _LoanEditorSheet(loan: loan, defaultDirection: defaultDirection, existingLoan: existingLoan),
+    child: _LoanEditorSheet(loan: loan, defaultDirection: defaultDirection, existingLoan: selectedExistingLoan),
   );
+}
+
+class _LoanTypeChoicePopup extends StatelessWidget {
+  const _LoanTypeChoicePopup();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final recordMovements = context.read<AppController>().loanRecordTransactionsByDefault;
+    Widget option({required String title, required String description, required IconData icon, required bool existing}) {
+      return FilledButton.tonal(
+        onPressed: () => Navigator.pop(context, existing),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(children: [
+            Icon(icon, size: 28),
+            const SizedBox(width: 14),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 5),
+                Text(description, style: theme.textTheme.bodySmall),
+              ],
+            )),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded),
+          ]),
+        ),
+      );
+    }
+    return YutakaPopupContent(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [
+            Expanded(child: Text('Choose loan type', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900))),
+            IconButton(tooltip: 'Close loan type choice', onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
+          ]),
+          const SizedBox(height: 8),
+          const Text('Is this a new loan or one that already exists?'),
+          const SizedBox(height: 20),
+          option(title: 'New loan', description: recordMovements ? 'Money is moving now. Update the selected account balance.' : 'Record a loan starting now.', icon: Icons.payments_rounded, existing: false),
+          const SizedBox(height: 12),
+          option(title: 'Existing loan', description: 'Already included in your balance. Track only what is still owed.', icon: Icons.history_rounded, existing: true),
+          const SizedBox(height: 16),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        ],
+      ),
+    );
+  }
 }
 
 class _LoanEditorSheet extends StatefulWidget {
@@ -345,7 +414,7 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
   String? contactId;
   String? accountId;
   bool busy = false;
-  late bool existingLoan;
+  late final bool existingLoan;
   late final TextEditingController amount;
   late final TextEditingController rate;
   late final TextEditingController note;
@@ -497,24 +566,11 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
           ),
           const SizedBox(height: 10),
           if (!editing) ...[
-            if (!widget.existingLoan && state.loanShowTypeOptions) ...[
-              SleekPillSelector<bool>(
-                options: const [
-                  SleekPillOption(value: false, label: 'New loan', icon: Icons.payments_rounded),
-                  SleekPillOption(value: true, label: 'Existing loan', icon: Icons.history_rounded),
-                ],
-                selected: existingLoan,
-                onChanged: (value) => setState(() => existingLoan = value),
-              ),
-              const SizedBox(height: 8),
-            ],
             Text(
               existingLoan
                   ? 'Track only the amount still owed. Account balances stay unchanged. Interest starts from Time • Date; keep today for an opening balance.'
                   : state.loanRecordTransactionsByDefault
-                      ? state.loanShowTypeOptions
-                          ? 'This records money moving now and changes the selected account balance. For an old loan already reflected in your balance, choose Existing loan.'
-                          : 'This records money moving now and changes the selected account balance.'
+                      ? 'This records money moving now and changes the selected account balance.'
                       : 'Account recording is off in loan settings. This loan will leave account balances unchanged.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSleekMuted),
@@ -923,7 +979,7 @@ class _LoanPreferencesSheet extends StatelessWidget {
             value: state.loanShowTypeOptions,
             onChanged: (value) => state.setLoanPreferences(showTypeOptions: value),
             title: const Text('Show loan type options', style: TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: const Text('Show New loan and Existing loan when adding a loan. When off, use New loan.'),
+            subtitle: const Text('Ask New loan or Existing loan before opening the form. When off, use New loan.'),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,

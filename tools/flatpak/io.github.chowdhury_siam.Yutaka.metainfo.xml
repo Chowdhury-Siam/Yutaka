@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1298" date="2026-10-14">
+      <description><p>Choose New loan or Existing loan in a centered popup before opening the loan form.</p></description>
+    </release>
     <release version="1.0.1297" date="2026-10-14">
       <description><p>Add a website-styled Worker welcome page and smoother calculator keys with haptic feedback.</p></description>
     </release>

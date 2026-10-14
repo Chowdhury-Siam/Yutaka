@@ -1,3 +1,9 @@
+## 1.0.1298+342
+
+- Open a centered New loan / Existing loan choice before the loan form. Continue with the selected loan type and preserve the lending or borrowing direction.
+- Keep the default-on loan type preference: when off, go straight to New loan. Editing a loan and explicit existing-loan setup skip the choice; closing or cancelling it opens no form.
+- Update loan-entry regression coverage and app release metadata. Keep Worker version 1.0.1297 unchanged.
+
 ## 1.0.1297+341
 
 - Replace raw JSON at the Worker root in browser visits with a Yutaka website-styled welcome page, including the original website logo, dark green colors, typography, administration links, address copying, and an inline connection check. Keep JSON for API clients and explicit ?format=json requests.
