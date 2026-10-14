@@ -69,6 +69,8 @@ part 'profile/profile_ui.dart';
 part 'profile/worker_profile_ui.dart';
 part 'analytics/analytics.dart';
 part 'calculator_popup.dart';
+part 'transaction_tools.dart';
+part 'android_quick_access.dart';
 
 const _uuid = Uuid();
 bool _privacyTelemetryRuntimeEnabled = false;
@@ -197,7 +199,7 @@ class YutakaDatabase {
     final path = p.join(dir, 'yutaka_flutter.db');
     _db = await sql.openDatabase(
       path,
-      version: 16,
+      version: 17,
       onCreate: (database, version) async {
         await _createSchema(database);
         await _seed(database);
@@ -426,6 +428,11 @@ class YutakaDatabase {
         resolved_at INTEGER
       )
     ''');
+    await database.execute('''CREATE TABLE IF NOT EXISTS transaction_trash(
+      id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, deleted_on INTEGER NOT NULL
+    )''');
+    await database.delete('transaction_trash', where: 'deleted_on < ?',
+        whereArgs: [dateToDb(DateTime.now().subtract(const Duration(days: 30)))]);
     await database.execute('CREATE INDEX IF NOT EXISTS idx_sync_outbox_created ON sync_outbox(created_at)');
     await database.execute('CREATE INDEX IF NOT EXISTS idx_sync_outbox_entity ON sync_outbox(entity_type, entity_id)');
     await database.execute('CREATE INDEX IF NOT EXISTS idx_sync_conflicts_open ON sync_conflicts(resolved_at, created_at)');
@@ -482,6 +489,9 @@ class YutakaDatabase {
         .toSet();
     if (!columns.contains('exclude_from_reports')) {
       await database.execute('ALTER TABLE transactions ADD COLUMN exclude_from_reports INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!columns.contains('category_splits')) {
+      await database.execute("ALTER TABLE transactions ADD COLUMN category_splits TEXT NOT NULL DEFAULT '{}'");
     }
     if (!columns.contains('title')) {
       await database.execute("ALTER TABLE transactions ADD COLUMN title TEXT NOT NULL DEFAULT ''");
@@ -791,6 +801,19 @@ class YutakaDatabase {
           whereArgs: [entry.key],
         );
       }
+      for (final row in await txn.query('transactions')) {
+        final tx = MoneyTransaction.fromMap(row);
+        if (tx.categorySplits.isEmpty) { continue; }
+        final remapped = <String, double>{};
+        for (final entry in tx.categorySplits.entries) {
+          final id = plan.remapCategoryId(entry.key);
+          remapped[id] = (remapped[id] ?? 0) + entry.value;
+        }
+        if (jsonEncode(remapped) != jsonEncode(tx.categorySplits)) {
+          await txn.update('transactions', {'category_splits': jsonEncode(remapped), 'updated_on': now}, where: 'id = ?', whereArgs: [tx.id]);
+          updatedTransactionIds.add(tx.id);
+        }
+      }
       for (final entry in plan.duplicateToCanonicalId.entries) {
         final duplicateId = entry.key;
         final canonicalId = entry.value;
@@ -1009,6 +1032,7 @@ class YutakaDatabase {
   }
 
   Future<({List<Account> accounts, List<MoneyTransaction> transactions})> addTransaction(MoneyTransaction transaction) async {
+    transaction.validateAmounts();
     if (transaction.type == MoneyTransactionType.transfer && transaction.fromAccountId == transaction.toAccountId) {
       throw StateError('Transfer source and destination account cannot be the same.');
     }
@@ -1043,6 +1067,7 @@ class YutakaDatabase {
   }
 
   Future<void> updateTransaction(MoneyTransaction updated) async {
+    updated.validateAmounts();
     final database = await db;
     final oldRows = await database.query('transactions', where: 'id = ?', whereArgs: [updated.id], limit: 1);
     if (oldRows.isEmpty) {
@@ -1155,6 +1180,7 @@ class YutakaDatabase {
     final normalized = normalizeCategoryDatabasePayload(data);
     final tables = ['loan_payments', 'loans', 'loan_contacts', 'budget_categories', 'budget_accounts', 'budgets', 'transactions', 'subscriptions', 'planned_purchases', 'notes', 'categories', 'accounts'];
     await database.transaction((txn) async {
+      await txn.delete('transaction_trash');
       for (final table in tables) {
         await txn.delete(table);
       }
@@ -1192,6 +1218,7 @@ class YutakaDatabase {
       for (final table in tables) {
         await txn.delete(table);
       }
+      await txn.delete('transaction_trash');
       await txn.delete('sync_outbox');
       await txn.delete('sync_entity_versions');
       await txn.delete('sync_conflicts');
@@ -1205,6 +1232,7 @@ class YutakaDatabase {
       for (final table in tables) {
         await txn.delete(table);
       }
+      await txn.delete('transaction_trash');
       await txn.delete('sync_outbox');
       await txn.delete('sync_entity_versions');
       await txn.delete('sync_conflicts');
@@ -2329,6 +2357,8 @@ class AppController extends ChangeNotifier {
   TimeOfDay reminderTime = const TimeOfDay(hour: 21, minute: 0);
   bool loanRecordTransactionsByDefault = true;
   bool loanShowTypeOptions = true;
+  List<TransactionShortcut> transactionShortcuts = [];
+  bool deviceLockEnabled = false;
   bool loanRemindersEnabled = true;
   bool loanShowWrittenOff = false;
   bool loanTransactionsVisibleInTransactionList = true;
@@ -2899,6 +2929,8 @@ class AppController extends ChangeNotifier {
     }
     loanRecordTransactionsByDefault = await prefs.getBool('loanRecordTransactionsByDefault', true);
     loanShowTypeOptions = await prefs.getBool('loanShowTypeOptions', true);
+    transactionShortcuts = TransactionShortcut.decode(await prefs.getString('transactionShortcuts', '[]'));
+    deviceLockEnabled = await prefs.getBool('deviceLockEnabled', false);
     loanRemindersEnabled = await prefs.getBool('loanRemindersEnabled', true);
     loanShowWrittenOff = await prefs.getBool('loanShowWrittenOff', false);
     loanTransactionsVisibleInTransactionList = await prefs.getBool('loanTransactionsVisibleInTransactionList', true);
@@ -3342,7 +3374,7 @@ class AppController extends ChangeNotifier {
         if (tx.type == MoneyTransactionType.transfer && (tx.toAccountId == null || !accountIds.contains(tx.toAccountId))) {
           missingAccountReferences += 1;
         }
-        if (tx.type != MoneyTransactionType.transfer && tx.categoryId.isNotEmpty && !categoryIds.contains(tx.categoryId)) {
+        if (tx.type != MoneyTransactionType.transfer && tx.categoryAmounts.keys.any((id) => id.isNotEmpty && !categoryIds.contains(id))) {
           missingCategoryReferences += 1;
         }
       }
@@ -3589,6 +3621,7 @@ class AppController extends ChangeNotifier {
         'reminderMinute': reminderTime.minute,
         'loanRecordTransactionsByDefault': loanRecordTransactionsByDefault,
         'loanShowTypeOptions': loanShowTypeOptions,
+        'transactionShortcuts': jsonEncode(transactionShortcuts.map((shortcut) => shortcut.toMap()).toList()),
         'loanRemindersEnabled': loanRemindersEnabled,
         'loanShowWrittenOff': loanShowWrittenOff,
         'loanTransactionsVisibleInTransactionList': loanTransactionsVisibleInTransactionList,
@@ -3600,6 +3633,7 @@ class AppController extends ChangeNotifier {
   Future<void> importPreferences(Map<String, dynamic> data) async {
     final sp = await prefs.prefs;
     const deviceLocalKeys = {
+      'deviceLockEnabled',
       'onboardingCompleted',
       'starterAccountsSkipped',
       'reducedMotion',
@@ -5879,6 +5913,7 @@ class AppController extends ChangeNotifier {
     await sp.setInt('reminderHour', 21);
     await sp.setInt('reminderMinute', 0);
     await sp.setBool('loanRecordTransactionsByDefault', true);
+    await sp.setString('transactionShortcuts', '[]');
     await sp.setBool('loanShowTypeOptions', true);
     await sp.setBool('loanRemindersEnabled', true);
     await sp.setBool('loanShowWrittenOff', false);
@@ -6519,6 +6554,14 @@ class AppController extends ChangeNotifier {
     }
     if (remappedFilters.length != filterCategoryIds.length) preferencesChanged = true;
     filterCategoryIds = remappedFilters;
+
+    final shortcutJson = jsonEncode(transactionShortcuts.map((shortcut) => shortcut.toMap()).toList());
+    final remappedShortcuts = remapCategoryPreferences({'transactionShortcuts': shortcutJson}, result.plan)['transactionShortcuts'] as String;
+    if (remappedShortcuts != shortcutJson) {
+      preferencesChanged = true;
+      transactionShortcuts = TransactionShortcut.decode(remappedShortcuts);
+      await prefs.setString('transactionShortcuts', remappedShortcuts);
+    }
 
     if (preferencesChanged) {
       await prefs.setString('defaultExpenseCategoryId', defaultExpenseCategoryId ?? '');
@@ -7218,9 +7261,9 @@ class AppController extends ChangeNotifier {
       }
       if (filterAccountIds.isNotEmpty && !filterAccountIds.contains(tx.fromAccountId) && !(tx.toAccountId != null && filterAccountIds.contains(tx.toAccountId))) return false;
       final isReportableCategoryTransaction = tx.countsAsIncome || tx.countsAsExpense;
-      if (filterCategoryIds.isNotEmpty && (!isReportableCategoryTransaction || !filterCategoryIds.contains(tx.categoryId))) return false;
+      if (filterCategoryIds.isNotEmpty && (!isReportableCategoryTransaction || !tx.categoryAmounts.keys.any(filterCategoryIds.contains))) { return false; }
       if (filterTypes.isNotEmpty && !filterTypes.contains(tx.type)) return false;
-      if (categoryId != null && (!isReportableCategoryTransaction || tx.categoryId != categoryId)) return false;
+      if (categoryId != null && (!isReportableCategoryTransaction || !tx.categoryAmounts.containsKey(categoryId))) { return false; }
       if (accountId != null && tx.fromAccountId != accountId && tx.toAccountId != accountId) return false;
       if (types != null && !types.contains(tx.type)) return false;
       return true;
@@ -7336,10 +7379,11 @@ class AppController extends ChangeNotifier {
     final ids = _categoryIdsByType[type] ?? const <String>{};
     final result = <String, double>{};
     for (final tx in source ?? filteredTransactions(ignoreDate: ignoreDate)) {
-      if (!ids.contains(tx.categoryId)) continue;
       if (type == CategoryType.income && !tx.countsAsIncome) continue;
       if (type == CategoryType.expense && !tx.countsAsExpense) continue;
-      result[tx.categoryId] = (result[tx.categoryId] ?? 0) + tx.amount;
+      for (final entry in tx.categoryAmounts.entries) {
+        if (ids.contains(entry.key)) { result[entry.key] = (result[entry.key] ?? 0) + entry.value; }
+      }
     }
     return result;
   }
@@ -7353,10 +7397,10 @@ class AppController extends ChangeNotifier {
         if (!tx.countsAsExpense) return false;
         if (tx.createdOn.isBefore(start) || !tx.createdOn.isBefore(end)) return false;
         if (!budget.allAccountsSelected && !budget.accountIds.contains(tx.fromAccountId)) return false;
-        if (!budget.allCategoriesSelected && !budget.categoryIds.contains(tx.categoryId)) return false;
+        if (!budget.allCategoriesSelected && !tx.categoryAmounts.keys.any(budget.categoryIds.contains)) { return false; }
         return true;
       }).toList();
-      result.add(BudgetProgress(budget, txs.fold<double>(0, (sum, tx) => sum + tx.amount), txs));
+      result.add(BudgetProgress(budget, txs.fold<double>(0, (sum, tx) => sum + (budget.allCategoriesSelected ? tx.amount : tx.amountForCategories(budget.categoryIds))), txs));
     }
     return result;
   }
@@ -7815,12 +7859,14 @@ class YutakaApp extends StatelessWidget {
             textScaler: media.textScaler.clamp(minScaleFactor: .90, maxScaleFactor: maxScale),
             disableAnimations: media.disableAnimations,
           ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              child ?? const SizedBox.shrink(),
-              YutakaUpdateActivityOverlay(navigatorKey: _yutakaNavigatorKey),
-            ],
+          child: DeviceLockGate(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                child ?? const SizedBox.shrink(),
+                YutakaUpdateActivityOverlay(navigatorKey: _yutakaNavigatorKey),
+              ],
+            ),
           ),
         );
       },
@@ -17660,13 +17706,24 @@ class _TransactionSortOption extends StatelessWidget {
   }
 }
 
-class TransactionListScreen extends StatelessWidget {
+class TransactionListScreen extends StatefulWidget {
   const TransactionListScreen({super.key});
+  @override
+  State<TransactionListScreen> createState() => _TransactionListScreenState();
+}
+
+class _TransactionListScreenState extends State<TransactionListScreen> {
+  final search = TextEditingController();
+  @override
+  void dispose() {
+    search.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppController>();
-    final txs = state.transactionListTransactions();
+    final txs = state.transactionListTransactions().where((tx) => transactionMatchesSearch(state, tx, search.text)).toList();
     final range = state.activeRange();
     final hasDateFilter = state.dateRangeType != DateRangeType.allTime;
     final hasTransactionFilters = state.filterAccountIds.isNotEmpty ||
@@ -17719,6 +17776,19 @@ class TransactionListScreen extends StatelessWidget {
       ],
       child: ResponsiveListContent(
         header: [
+          TextField(key: const ValueKey('transaction-search'), controller: search,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(hintText: 'Search title, amount, account, category or person',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: search.text.isEmpty ? null : IconButton(tooltip: 'Clear search',
+                  onPressed: () => setState(search.clear), icon: const Icon(Icons.close_rounded))),
+          ),
+          Wrap(spacing: 8, children: [
+            TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TransactionShortcutsScreen())),
+                icon: const Icon(Icons.bolt_rounded), label: const Text('Shortcuts')),
+            TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecentlyDeletedTransactionsScreen())),
+                icon: const Icon(Icons.restore_from_trash_rounded), label: const Text('Recently deleted')),
+          ]),
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Text(
@@ -17734,7 +17804,11 @@ class TransactionListScreen extends StatelessWidget {
           ActiveFilterChips(state: state),
         ],
         itemCount: txs.length,
-        empty: TransactionListEmptyState(
+        empty: search.text.trim().isNotEmpty
+            ? EmptyCard(icon: Icons.search_off_rounded, title: 'No search matches',
+                body: 'Search applies to the current date range and filters. Try another term or change the filters.',
+                action: () => setState(search.clear), actionLabel: 'Clear search')
+            : TransactionListEmptyState(
           state: state,
           totalTransactionCount: totalTransactionCount,
           matchingWithoutDateCount: matchingWithoutDateCount,
@@ -17893,6 +17967,7 @@ Future<void> _duplicateTransaction(BuildContext context, MoneyTransaction tx) as
     title: tx.title,
     notes: tx.notes,
     categoryId: tx.categoryId,
+    categorySplits: tx.categorySplits,
     fromAccountId: tx.fromAccountId,
     toAccountId: tx.toAccountId,
     imagePath: tx.imagePath,
@@ -17905,7 +17980,7 @@ Future<void> _duplicateTransaction(BuildContext context, MoneyTransaction tx) as
   if (context.mounted) showSnack(context, 'Transaction duplicated and added.');
 }
 
-Future<void> _confirmDeleteTransaction(BuildContext context, MoneyTransaction tx) async {
+Future<bool> _confirmDeleteTransaction(BuildContext context, MoneyTransaction tx) async {
   final state = context.read<AppController>();
   final confirmed = await showDialog<bool>(
     context: context,
@@ -17926,13 +18001,27 @@ Future<void> _confirmDeleteTransaction(BuildContext context, MoneyTransaction tx
       ],
     ),
   );
-  if (confirmed != true) return;
-  if (tx.isLoanTransaction) {
-    await state.deleteLinkedLoanTransaction(tx);
-  } else {
-    await state.deleteTransaction(tx.id);
+  if (confirmed != true) { return false; }
+  try {
+    await state.moveTransactionToTrash(tx.id);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Transaction deleted.'), duration: const Duration(seconds: 8),
+        action: SnackBarAction(label: 'Undo', onPressed: () async {
+          try {
+            await state.restoreDeletedTransaction(tx.id);
+          } catch (error) {
+            final current = _yutakaNavigatorKey.currentContext;
+            if (current != null && current.mounted) { showSnack(current, error.toString().replaceFirst('Bad state: ', '')); }
+          }
+        }),
+      ));
+    }
+    return true;
+  } catch (error) {
+    if (context.mounted) { showSnack(context, 'Could not delete transaction. ${error.toString().replaceFirst('Bad state: ', '')}'); }
+    return false;
   }
-  if (context.mounted) showSnack(context, 'Transaction deleted.');
 }
 
 class TransactionTile extends StatelessWidget {
@@ -18009,8 +18098,8 @@ class TransactionTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  if (categoryLabel != null)
-                    Text(categoryLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: detailStyle),
+                  if (categoryLabel != null || tx.categorySplits.isNotEmpty)
+                    Text(tx.categorySplits.isEmpty ? categoryLabel! : 'Split • ${tx.categoryAmounts.keys.map((id) => state.categoryOf(id)?.name ?? 'Category').join(' + ')}', maxLines: 1, overflow: TextOverflow.ellipsis, style: detailStyle),
                   Wrap(
                     spacing: 12,
                     runSpacing: 2,
@@ -18506,19 +18595,20 @@ class _ConfigurationButtonLabel extends StatelessWidget {
   }
 }
 
-Future<void> showTransactionEditor(BuildContext context, {MoneyTransaction? transaction, Category? lockedCategory}) async {
+Future<void> showTransactionEditor(BuildContext context, {MoneyTransaction? transaction, Category? lockedCategory, TransactionShortcut? shortcut}) async {
   await showYutakaPopup<void>(
     context,
     maxWidth: 560,
     maxHeight: 700,
-    child: TransactionEditor(transaction: transaction, lockedCategory: lockedCategory),
+    child: TransactionEditor(transaction: transaction, lockedCategory: lockedCategory, shortcut: shortcut),
   );
 }
 
 class TransactionEditor extends StatefulWidget {
-  const TransactionEditor({super.key, this.transaction, this.lockedCategory});
+  const TransactionEditor({super.key, this.transaction, this.lockedCategory, this.shortcut});
   final MoneyTransaction? transaction;
   final Category? lockedCategory;
+  final TransactionShortcut? shortcut;
 
   @override
   State<TransactionEditor> createState() => _TransactionEditorState();
@@ -18543,15 +18633,17 @@ class _TransactionEditorState extends State<TransactionEditor> {
   double serviceChargeValue = 0;
   bool _amountHasFocus = false;
   bool busy = false;
+  Map<String, double> categorySplits = {};
 
   @override
   void initState() {
     super.initState();
     amountFocus.addListener(_handleAmountFocusChanged);
     final state = context.read<AppController>();
-    final tx = widget.transaction;
-    _transactionId = tx?.id ?? _uuid.v4();
+    final tx = widget.transaction ?? widget.shortcut?.draft;
+    _transactionId = widget.transaction?.id ?? _uuid.v4();
     if (tx != null) {
+      categorySplits = Map.of(tx.categorySplits);
       title.text = tx.title;
       notes.text = tx.notes;
       amount.text = tx.baseAmount.toStringAsFixed(2);
@@ -18560,12 +18652,12 @@ class _TransactionEditorState extends State<TransactionEditor> {
       serviceChargeMode = tx.serviceChargeMode;
       serviceChargeValue = tx.serviceChargeValue;
       categoryId = tx.categoryId;
-      fromAccountId = tx.fromAccountId;
-      toAccountId = tx.toAccountId;
-      selectedDate = tx.createdOn;
-      selectedEndDate = tx.effectiveEndOn;
-      dateRangeEnabled = tx.endOn != null && !isSameCalendarDay(tx.createdOn, tx.effectiveEndOn);
-      timeRangeEnabled = tx.endOn != null &&
+      fromAccountId = state.accountOf(tx.fromAccountId) == null ? null : tx.fromAccountId;
+      toAccountId = state.accountOf(tx.toAccountId ?? '') == null ? null : tx.toAccountId;
+      selectedDate = widget.shortcut == null ? tx.createdOn : DateTime.now();
+      selectedEndDate = widget.shortcut == null ? tx.effectiveEndOn : selectedDate;
+      dateRangeEnabled = widget.shortcut == null && tx.endOn != null && !isSameCalendarDay(tx.createdOn, tx.effectiveEndOn);
+      timeRangeEnabled = widget.shortcut == null && tx.endOn != null &&
           (tx.createdOn.hour != tx.effectiveEndOn.hour || tx.createdOn.minute != tx.effectiveEndOn.minute);
     } else {
       selectedEndDate = selectedDate;
@@ -18596,7 +18688,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
         ? serviceChargeValue.toStringAsFixed(0)
         : serviceChargeValue.toString();
     final baseValue = double.tryParse(amount.text.trim()) ?? 0;
-    if (baseValue <= 0) {
+    if (!baseValue.isFinite || baseValue <= 0) {
       return '$percentage%';
     }
     final charge = _serviceChargeAmount(
@@ -18660,6 +18752,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
                 _dismissAmountFocus();
                 setState(() {
                   type = v;
+                  categorySplits = {};
                   if (type == MoneyTransactionType.income || type == MoneyTransactionType.expense) {
                     final targetType = type == MoneyTransactionType.income ? CategoryType.income : CategoryType.expense;
                     final newCategories = state.categories.where((c) => c.type == targetType).toList();
@@ -18778,6 +18871,16 @@ class _TransactionEditorState extends State<TransactionEditor> {
                 ),
               ],
             )
+          else if (categorySplits.isNotEmpty)
+            ExpressiveCard(padding: const EdgeInsets.all(14), child: Row(children: [
+              const Icon(Icons.call_split_rounded, color: kSleekAccent),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Split categories', style: TextStyle(fontWeight: FontWeight.w800)),
+                Text(categorySplits.keys.map((id) => state.categoryOf(id)?.name ?? 'Choose category').join(' + '),
+                  style: Theme.of(context).textTheme.bodySmall),
+              ])),
+            ]))
           else if (type != MoneyTransactionType.transfer && widget.lockedCategory == null)
             AppleSelectionField(
               label: 'Category',
@@ -18804,6 +18907,44 @@ class _TransactionEditorState extends State<TransactionEditor> {
           if (widget.lockedCategory != null)
             ExpressiveCard(padding: const EdgeInsets.all(12), child: Row(children: [iconBubble(context, widget.lockedCategory!.iconName, widget.lockedCategory!.iconColor), const SizedBox(width: 12), Expanded(child: Text(widget.lockedCategory!.name, style: const TextStyle(fontWeight: FontWeight.w800)))])),
           const SizedBox(height: 12),
+          if (!isLoanTransaction) ...[
+            Row(children: [
+              if (type != MoneyTransactionType.transfer && widget.lockedCategory == null) ...[
+                Expanded(child: OutlinedButton.icon(onPressed: busy ? null : () async {
+                  _dismissAmountFocus();
+                  final value = double.tryParse(amount.text) ?? 0;
+                  if (!value.isFinite || value <= 0) {
+                    showSnack(context, 'Enter the total amount before splitting.');
+                    return;
+                  }
+                  final selected = await showTransactionSplits(context, type: type, total: value, initial: categorySplits);
+                  if (!mounted || selected == null) return;
+                  setState(() {
+                    categorySplits = selected;
+                    if (selected.isNotEmpty) { categoryId = selected.keys.first; }
+                  });
+                }, icon: const Icon(Icons.call_split_rounded, size: 18),
+                  label: Text(categorySplits.isEmpty ? 'Split' : '${categorySplits.length} categories'))),
+                const SizedBox(width: 8),
+              ],
+              Expanded(child: OutlinedButton.icon(onPressed: busy ? null : () async {
+                _dismissAmountFocus();
+                if (fromAccountId == null || (type != MoneyTransactionType.transfer && categoryId == null) ||
+                    (type == MoneyTransactionType.transfer && (toAccountId == null || toAccountId == fromAccountId))) {
+                  showSnack(context, 'Choose the account and category first.');
+                  return;
+                }
+                final now = DateTime.now();
+                final value = double.tryParse(amount.text) ?? 0;
+                final draft = MoneyTransaction(id: 'shortcut', type: type, amount: value, title: title.text.trim(),
+                    notes: notes.text.trim(), categoryId: categoryId ?? '', fromAccountId: fromAccountId!, toAccountId: toAccountId,
+                    categorySplits: categorySplits, serviceChargeEnabled: serviceChargeEnabled,
+                    serviceChargeMode: serviceChargeMode, serviceChargeValue: serviceChargeValue, createdOn: now, updatedOn: now);
+                await saveShortcutDialog(context, draft);
+              }, icon: const Icon(Icons.bolt_rounded, size: 18), label: const Text('Save shortcut'))),
+            ]),
+            const SizedBox(height: 12),
+          ],
           AppleSelectionField(
             label: type == MoneyTransactionType.transfer ? 'From account' : 'Account',
             option: fromAccount == null ? null : optionFromAccount(fromAccount, state),
@@ -18922,12 +19063,8 @@ class _TransactionEditorState extends State<TransactionEditor> {
           const SizedBox(height: 18),
           Row(children: [
             if (widget.transaction != null) Expanded(child: OutlinedButton(onPressed: () async {
-              if (isLoanTransaction) {
-                await state.deleteLinkedLoanTransaction(widget.transaction!);
-              } else {
-                await state.deleteTransaction(widget.transaction!.id);
-              }
-              if (context.mounted) Navigator.pop(context);
+              final deleted = await _confirmDeleteTransaction(context, widget.transaction!);
+              if (context.mounted && deleted) { Navigator.pop(context); }
             }, child: const Text('Delete'))),
             if (widget.transaction != null) const SizedBox(width: 12),
             Expanded(
@@ -18966,6 +19103,12 @@ class _TransactionEditorState extends State<TransactionEditor> {
                         if (fromAccountId == null) return showSnack(context, 'Select an account');
                         if (type == MoneyTransactionType.transfer && (toAccountId == null || toAccountId == fromAccountId)) return showSnack(context, 'Select a different destination account');
                         if (!isLoanTransaction && type != MoneyTransactionType.transfer && categoryId == null) return showSnack(context, 'Select a category');
+                        if (!isLoanTransaction && type != MoneyTransactionType.transfer) {
+                          final expectedType = type == MoneyTransactionType.income ? CategoryType.income : CategoryType.expense;
+                          if ({categoryId, ...categorySplits.keys}.any((id) => state.categoryOf(id ?? '')?.type != expectedType)) {
+                            return showSnack(context, 'Choose valid categories for this transaction type.');
+                          }
+                        }
                         final rangeRequested = dateRangeEnabled || timeRangeEnabled;
                         if (rangeRequested && selectedEndDate.isBefore(selectedDate)) return showSnack(context, 'The end of the range must be after the start');
                         final hasEffectiveRange = rangeRequested && selectedEndDate.isAfter(selectedDate);
@@ -18982,6 +19125,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
                             serviceChargeAmount: chargeEnabled ? chargeAmount : 0,
                             title: type == MoneyTransactionType.transfer ? '' : transactionTitle,
                             notes: notes.text.trim(),
+                            categorySplits: categorySplits,
                             categoryId: type == MoneyTransactionType.transfer ? '' : (categoryId ?? ''),
                             fromAccountId: fromAccountId!,
                             toAccountId: type == MoneyTransactionType.transfer ? toAccountId : null,
@@ -19587,10 +19731,10 @@ List<BudgetHealthItem> budgetHealthItemsForPeriod(AppController state, Financial
       if (!tx.countsAsExpense) return false;
       if (!isInsideFinancialPeriod(tx.createdOn, start, end)) return false;
       if (!budget.allAccountsSelected && !budget.accountIds.contains(tx.fromAccountId)) return false;
-      if (!budget.allCategoriesSelected && !budget.categoryIds.contains(tx.categoryId)) return false;
+      if (!budget.allCategoriesSelected && !tx.categoryAmounts.keys.any(budget.categoryIds.contains)) { return false; }
       return true;
     }).toList();
-    final spent = txs.fold<double>(0, (sum, tx) => sum + tx.amount);
+    final spent = txs.fold<double>(0, (sum, tx) => sum + (budget.allCategoriesSelected ? tx.amount : tx.amountForCategories(budget.categoryIds)));
     final categoryNames = budget.allCategoriesSelected
         ? 'All expense categories'
         : budget.categoryIds.map((id) => state.categoryOf(id)?.name ?? 'Category').take(3).join(', ');
@@ -21789,6 +21933,10 @@ class SettingsScreen extends StatelessWidget {
               const BatteryOptimizationSettingsTile(),
             ],
             const SectionHeader('App'),
+            if (Platform.isAndroid) ...[
+              const DeviceLockSettingsTile(),
+              SettingsTile(icon: Icons.widgets_rounded, title: 'Home-screen widget', subtitle: 'Today’s spending and Add expense', color: kSleekAccentHex, onTap: () => pinYutakaWidget(context)),
+            ],
             SettingsTile(icon: Icons.privacy_tip_rounded, title: 'Privacy & data', subtitle: state.privacyTelemetryEnabled ? 'Telemetry enabled • policy and data controls' : 'Telemetry off • policy and data controls', color: '#B4A5FF', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyAndDataScreen()))),
             if (!kIsGooglePlayBuild && !kIsFlatpakBuild)
               SettingsTile(icon: Icons.system_update_alt_rounded, title: 'Updates', subtitle: state.updateStatusMessage, color: kSleekAccentHex, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdatesScreen()))),
@@ -27232,7 +27380,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
     ),
     (
       '7. Permissions',
-      'Yutaka uses network access for optional online features, notification/alarm permissions for reminders, boot/background capabilities for scheduled work, battery-optimization access when you choose that flow, and media/storage access for files that you choose to import, export, or use as profile media. Yutaka does not request contacts, SMS, call logs, microphone, or precise location access.',
+      'Yutaka uses network access for optional online features, notification/alarm permissions for reminders, boot/background capabilities for scheduled work, battery-optimization access when you choose that flow, and media/storage access for files that you choose to import, export, or use as profile media. Optional device locking uses Android’s biometric or screen-lock prompt; Yutaka does not receive or store fingerprints or device PINs. Yutaka does not request contacts, SMS, call logs, microphone, or precise location access.',
     ),
     (
       '8. Retention and deletion',
