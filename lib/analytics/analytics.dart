@@ -282,11 +282,15 @@ _AnalyticsCore _buildAnalyticsCore(AppController state, AnalyticsRange range) {
   for (final tx in transactions) {
     if (tx.countsAsIncome) {
       income += tx.amount;
-      incomeByCategory[tx.categoryId] = (incomeByCategory[tx.categoryId] ?? 0) + tx.amount;
+      for (final entry in tx.categoryAmounts.entries) {
+        incomeByCategory[entry.key] = (incomeByCategory[entry.key] ?? 0) + entry.value;
+      }
     }
     if (tx.countsAsExpense) {
       expense += tx.amount;
-      expenseByCategory[tx.categoryId] = (expenseByCategory[tx.categoryId] ?? 0) + tx.amount;
+      for (final entry in tx.categoryAmounts.entries) {
+        expenseByCategory[entry.key] = (expenseByCategory[entry.key] ?? 0) + entry.value;
+      }
     }
     if (tx.type == MoneyTransactionType.transfer) {
       transferVolume += tx.transferAmount;
@@ -322,8 +326,7 @@ _AnalyticsCore _buildAnalyticsCore(AppController state, AnalyticsRange range) {
       if (!tx.countsAsExpense) continue;
       if (!_analyticsDateInside(tx.listOn, monthRange)) continue;
       if (!budget.allAccountsSelected && !budget.accountIds.contains(tx.fromAccountId)) continue;
-      if (!budget.allCategoriesSelected && !budget.categoryIds.contains(tx.categoryId)) continue;
-      budgetSpent += tx.amount;
+      budgetSpent += budget.allCategoriesSelected ? tx.amount : tx.amountForCategories(budget.categoryIds);
     }
   }
 
@@ -541,7 +544,7 @@ class AnalyticsPdfService {
     final transferVolume = transfers.fold<double>(0, (sum, tx) => sum + tx.transferAmount);
 
     String accountName(String id) => state.accountOf(id)?.name ?? 'Unknown account';
-    String categoryName(MoneyTransaction tx) => state.categoryOf(tx.categoryId)?.name ?? 'Uncategorized';
+    String categoryName(MoneyTransaction tx) => transactionCategorySummary(state, tx);
     String transactionDateLabel(MoneyTransaction tx) {
       final start = DateFormat('yyyy-MM-dd HH:mm').format(tx.createdOn);
       final end = tx.effectiveEndOn;
@@ -699,7 +702,7 @@ String _analyticsTransactionTitle(AppController state, MoneyTransaction tx) {
     return '$from -> $to';
   }
   if (savedTitle.isNotEmpty) return savedTitle;
-  return state.categoryOf(tx.categoryId)?.name ?? 'Uncategorized';
+  return transactionCategorySummary(state, tx);
 }
 
 List<MoneyTransaction> _analyticsReportTransactions(AnalyticsSnapshot snapshot) =>
@@ -731,7 +734,7 @@ Uint8List _analyticsTextReport(AppController state, AnalyticsSnapshot snapshot, 
       for (final tx in transactions) {
         final start = DateFormat('yyyy-MM-dd HH:mm').format(tx.createdOn);
         final end = DateFormat('yyyy-MM-dd HH:mm').format(tx.effectiveEndOn);
-        final category = state.categoryOf(tx.categoryId)?.name ?? 'Uncategorized';
+        final category = transactionCategorySummary(state, tx);
         final from = state.accountOf(tx.fromAccountId)?.name ?? 'Unknown account';
         final to = tx.toAccountId == null ? '' : (state.accountOf(tx.toAccountId!)?.name ?? 'Unknown account');
         final signedAmount = switch (tx.type) {
@@ -1019,7 +1022,7 @@ Uint8List _analyticsXlsxReport(AppController state, AnalyticsSnapshot snapshot, 
         tx.serviceChargeEnabled ? tx.serviceChargeValue : 0,
         state.currencyCode,
         _analyticsTransactionTitle(state, tx),
-        state.categoryOf(tx.categoryId)?.name ?? 'Uncategorized',
+        transactionCategorySummary(state, tx),
         state.accountOf(tx.fromAccountId)?.name ?? 'Unknown account',
         tx.toAccountId == null ? '' : (state.accountOf(tx.toAccountId!)?.name ?? 'Unknown account'),
         tx.notes.trim(),
