@@ -14,7 +14,6 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     controller = AppController()..loading = false;
     authenticationSucceeds = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
@@ -24,7 +23,6 @@ void main() {
   });
   tearDown(() {
     controller.dispose();
-    debugDefaultTargetPlatformOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
   });
 
@@ -40,6 +38,8 @@ void main() {
     await tester.tap(toggle);
     await tester.pumpAndSettle();
     expect(controller.deviceLockEnabled, isFalse);
+    await tester.tap(find.byTooltip('Dismiss'));
+    await tester.pumpAndSettle();
     authenticationSucceeds = true;
     await tester.tap(toggle);
     await tester.pumpAndSettle();
@@ -47,7 +47,7 @@ void main() {
     expect(await controller.prefs.getBool('deviceLockEnabled', false), isTrue);
     expect((await controller.exportPreferences()).containsKey('deviceLockEnabled'), isFalse);
     await tester.pumpWidget(const SizedBox.shrink());
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
   testWidgets('failed authentication stays locked and leaving the app locks every route again', (tester) async {
     controller.deviceLockEnabled = true;
@@ -70,5 +70,5 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Private transaction'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 }
