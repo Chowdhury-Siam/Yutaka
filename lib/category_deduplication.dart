@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 String normalizeCategoryDisplayName(String value) => value.trim().replaceAll(RegExp(r'\s+'), ' ');
 
 String categoryIdentityKey(String type, String name) {
@@ -117,6 +119,23 @@ NormalizedCategoryDatabasePayload normalizeCategoryDatabasePayload(Map<String, d
     final normalized = Map<String, Object?>.from(row);
     final categoryId = normalized['category_id']?.toString() ?? '';
     if (categoryId.isNotEmpty) normalized['category_id'] = plan.remapCategoryId(categoryId);
+    final rawSplits = normalized['category_splits'];
+    if (rawSplits is String && rawSplits.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawSplits);
+        if (decoded is Map) {
+          final remapped = <String, double>{};
+          for (final entry in decoded.entries) {
+            if (entry.value is! num) { continue; }
+            final id = plan.remapCategoryId(entry.key.toString());
+            remapped[id] = (remapped[id] ?? 0) + (entry.value as num).toDouble();
+          }
+          normalized['category_splits'] = jsonEncode(remapped);
+        }
+      } on FormatException {
+        // Keep the original metadata for diagnostics rather than erasing it.
+      }
+    }
     return normalized;
   }).toList();
 
@@ -142,6 +161,36 @@ Map<String, dynamic> remapCategoryPreferences(Map<String, dynamic> source, Categ
   for (final key in const ['defaultExpenseCategoryId', 'defaultIncomeCategoryId']) {
     final id = preferences[key]?.toString() ?? '';
     if (id.isNotEmpty) preferences[key] = plan.remapCategoryId(id);
+  }
+  final shortcuts = preferences['transactionShortcuts'];
+  if (shortcuts is String) {
+    try {
+      final decoded = jsonDecode(shortcuts);
+      if (decoded is List) {
+        for (final row in decoded.whereType<Map>()) {
+          final draft = row['draft'];
+          if (draft is Map) {
+            draft['category_id'] = plan.remapCategoryId(draft['category_id']?.toString() ?? '');
+            final raw = draft['category_splits'];
+            if (raw is String) {
+              final split = jsonDecode(raw);
+              if (split is Map) {
+                final remapped = <String, num>{};
+                for (final entry in split.entries) {
+                  if (entry.value is! num) { continue; }
+                  final id = plan.remapCategoryId(entry.key.toString());
+                  remapped[id] = (remapped[id] ?? 0) + (entry.value as num);
+                }
+                draft['category_splits'] = jsonEncode(remapped);
+              }
+            }
+          }
+        }
+        preferences['transactionShortcuts'] = jsonEncode(decoded);
+      }
+    } on FormatException {
+      // A malformed shortcut never prevents finance records from importing.
+    }
   }
   final filters = preferences['filterCategoryIds'];
   if (filters is List) {
