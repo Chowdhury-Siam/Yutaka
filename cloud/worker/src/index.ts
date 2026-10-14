@@ -1,3 +1,4 @@
+import { transactionCategoryAmounts } from './transaction-splits.ts';
 import { createClient, type Client } from '@libsql/client/web';
 import { profilePage } from './profile.ts';
 import { deleteAccountPage } from './delete_account.ts';
@@ -2448,7 +2449,8 @@ async function buildScheduledAnalyticsPdf(
           ? `${accountName(tx.from_account_id)} -> ${accountName(tx.to_account_id)}`
           : accountName(tx.from_account_id);
         lines.push(`${date} | ${type} | ${sign}${scheduledAnalyticsMoney(currencyCode, amount)} | ${title}`);
-        lines.push(`Category: ${categoryName(tx.category_id)} | Account: ${route}${Number(tx.exclude_from_reports ?? 0) === 1 ? ' | Excluded from reports' : ''}`);
+        const categoryDescription = tx.category_splits ? [...transactionCategoryAmounts(tx)].map(([id, share]) => `${categoryName(id)}: ${scheduledAnalyticsMoney(currencyCode, share)}`).join(' + ') : categoryName(tx.category_id);
+        lines.push(`Category: ${categoryDescription} | Account: ${route}${Number(tx.exclude_from_reports ?? 0) === 1 ? ' | Excluded from reports' : ''}`);
         if (Number(tx.service_charge_enabled ?? 0) === 1) {
           const baseAmount = rowNumber(tx, 'base_amount') || amount;
           const chargeAmount = rowNumber(tx, 'service_charge_amount');
@@ -2478,14 +2480,17 @@ async function buildScheduledAnalyticsPdf(
       for (const tx of txs) {
         const amount = rowNumber(tx, 'amount');
         const excluded = Number(tx.exclude_from_reports ?? 0) === 1;
-        const categoryId = String(tx.category_id ?? '');
         if (!excluded && tx.type === 'income') {
           income += amount;
-          incomeCategories.set(categoryId, (incomeCategories.get(categoryId) ?? 0) + amount);
+          for (const [id, share] of transactionCategoryAmounts(tx)) {
+            incomeCategories.set(id, (incomeCategories.get(id) ?? 0) + share);
+          }
         }
         if (!excluded && tx.type === 'expense') {
           expense += amount;
-          expenseCategories.set(categoryId, (expenseCategories.get(categoryId) ?? 0) + amount);
+          for (const [id, share] of transactionCategoryAmounts(tx)) {
+            expenseCategories.set(id, (expenseCategories.get(id) ?? 0) + share);
+          }
         }
         if (tx.type === 'transfer') {
           const transferAmount = rowNumber(tx, 'base_amount') || amount;
@@ -2538,8 +2543,8 @@ async function buildScheduledAnalyticsPdf(
         const when = transactionEffectiveTimestamp(tx);
         if (when < monthStart || when >= monthEnd || tx.type !== 'expense' || Number(tx.exclude_from_reports ?? 0) === 1) continue;
         if (!allAccounts && !allowedAccounts.has(String(tx.from_account_id ?? ''))) continue;
-        if (!allCategories && !allowedCategories.has(String(tx.category_id ?? ''))) continue;
-        budgetSpent += rowNumber(tx, 'amount');
+        budgetSpent += allCategories ? rowNumber(tx, 'amount') : [...transactionCategoryAmounts(tx)]
+          .filter(([id]) => allowedCategories.has(id)).reduce((sum, [, share]) => sum + share, 0);
       }
     }
 
