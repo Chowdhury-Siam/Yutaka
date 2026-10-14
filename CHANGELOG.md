@@ -1,5 +1,6 @@
 ## 1.0.1305+349
 
+- Fix the local-first transaction test to expect complete affected-account sets after account splitting, and cover ordinary, split, changed-split, and transfer account sets. App and Worker code and versions are unchanged by this test-only correction.
 - Add Split accounts to income and expense transactions. Allocate the total across 2–20 regular/credit accounts in a centered popup, validate matching totals, share service charges proportionally, and allow editing or clearing the split.
 - Keep one transaction while applying, reversing, deleting, and restoring each account share. Include every affected account in sync; preserve allocations in backups, shortcuts, duplicates, search, filters, transaction details, and PDF/XLSX/TXT reports.
 - Count the selected account share in scoped budgets. When a budget selects both accounts and categories, apply the two allocations proportionally. Preserve existing transactions and balances with the additive database version 18 migration.
