@@ -1,3 +1,10 @@
+## 1.0.1301+345
+
+- Apply the shared adaptive copy/paste menu, interactive selection, and outside-tap keyboard dismissal to transaction search, shortcut names, and split amount inputs. Include the new transaction tools in the text-field regression checks.
+- Keep loan visibility filtering before transaction search and update its source contract for the search flow.
+- Scope device-lock test platform overrides using Flutter platform variants, and dismiss cancellation feedback before retrying authentication so the switch is not obscured.
+- Update app release metadata; keep Worker version 1.0.1300 unchanged.
+
 ## 1.0.1300+344
 
 - Add transaction search across titles, notes, amounts, accounts, split categories, dates, and linked loan contacts while respecting current filters.
