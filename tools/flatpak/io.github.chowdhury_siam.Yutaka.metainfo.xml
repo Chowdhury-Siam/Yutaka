@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1302" date="2026-10-15">
+      <description><p>Fix Android compilation by sharing one intent callback for widget and update handling.</p></description>
+    </release>
     <release version="1.0.1301" date="2026-10-15">
       <description><p>Fix transaction-tool text input controls and device-lock regression checks.</p></description>
     </release>
