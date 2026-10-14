@@ -28,12 +28,16 @@ String transactionCategorySummary(AppController state, MoneyTransaction tx) => t
     ? state.categoryOf(tx.categoryId)?.name ?? 'Uncategorized'
     : tx.categoryAmounts.entries.map((entry) => '${state.categoryOf(entry.key)?.name ?? 'Uncategorized'}: ${_analyticsReportMoney(state, entry.value)}').join(' + ');
 
+String transactionAccountSummary(AppController state, MoneyTransaction tx) => tx.accountSplits.isEmpty
+    ? state.accountOf(tx.fromAccountId)?.name ?? 'Unknown account'
+    : tx.accountAmounts.entries.map((entry) => '${state.accountOf(entry.key)?.name ?? 'Unknown account'}: ${_analyticsReportMoney(state, entry.value)}').join(' + ');
+
 bool transactionMatchesSearch(AppController state, MoneyTransaction tx, String query) {
   final terms = query.trim().toLowerCase().split(RegExp(r'\s+')).where((term) => term.isNotEmpty);
   final loan = tx.linkedEntityType == 'loans' ? state.loanOf(tx.linkedEntityId ?? '')
       : state.loanOf(state.loanPayments.where((payment) => payment.id == tx.linkedEntityId).firstOrNull?.loanId ?? '');
   final text = [tx.title, tx.notes, tx.displayType, tx.amount.toString(), tx.baseAmount.toString(),
-    tx.amount.toStringAsFixed(2), tx.baseAmount.toStringAsFixed(2), state.format(tx.amount), state.accountOf(tx.fromAccountId)?.name ?? '',
+    tx.amount.toStringAsFixed(2), tx.baseAmount.toStringAsFixed(2), state.format(tx.amount), ...tx.accountAmounts.keys.map((id) => state.accountOf(id)?.name ?? ''),
     state.accountOf(tx.toAccountId ?? '')?.name ?? '',
     ...tx.categoryAmounts.keys.map((id) => state.categoryOf(id)?.name ?? ''),
     state.loanContactOf(loan?.contactId ?? '')?.name ?? '',
@@ -48,7 +52,7 @@ extension TransactionToolsController on AppController {
         !shortcut.draft.amount.isFinite || shortcut.draft.amount < 0 || !shortcut.draft.serviceChargeValue.isFinite) {
       throw StateError('Enter a shortcut name for an income, expense, or transfer.');
     }
-    if (shortcut.draft.categorySplits.isNotEmpty) { shortcut.draft.validateAmounts(); }
+    if (shortcut.draft.categorySplits.isNotEmpty || shortcut.draft.accountSplits.isNotEmpty) { shortcut.draft.validateAmounts(); }
     final next = [...transactionShortcuts.where((item) => item.id != shortcut.id), shortcut];
     await prefs.setString('transactionShortcuts', jsonEncode(next.map((item) => item.toMap()).toList()));
     transactionShortcuts = next;
@@ -116,7 +120,7 @@ extension TransactionTrashRepository on YutakaDatabase {
   }
 
   Future<void> _enqueueTrashAccounts(sql.Transaction txn, MoneyTransaction tx) async {
-    for (final id in {tx.fromAccountId, tx.toAccountId}.whereType<String>()) {
+    for (final id in tx.accountIds) {
       final rows = await txn.query('accounts', where: 'id = ?', whereArgs: [id]);
       if (rows.isNotEmpty) {
         await _enqueueSyncOperation(txn, entityType: 'accounts', entityId: id, operation: 'upsert', payload: rows.single);
@@ -159,7 +163,7 @@ extension TransactionTrashRepository on YutakaDatabase {
         return;
       }
       restored.validateAmounts();
-      for (final account in {restored.fromAccountId, restored.toAccountId}.whereType<String>()) {
+      for (final account in restored.accountIds) {
         if ((await txn.query('accounts', columns: ['id'], where: 'id = ?', whereArgs: [account])).isEmpty) {
           throw StateError('Restore the missing account before restoring this transaction.');
         }
@@ -249,15 +253,20 @@ class TransactionShortcutsScreen extends StatelessWidget {
       itemBuilder: (context, index) {
         final shortcut = state.transactionShortcuts[index];
         return Padding(padding: const EdgeInsets.only(bottom: 10), child: ExpressiveCard(
-          child: ListTile(leading: const Icon(Icons.bolt_rounded, color: kSleekAccent), title: Text(shortcut.name),
-            subtitle: Text('${shortcut.draft.displayType} • ${state.accountOf(shortcut.draft.fromAccountId)?.name ?? 'Choose account'}'),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            ListTile(leading: const Icon(Icons.bolt_rounded, color: kSleekAccent), title: Text(shortcut.name),
+            subtitle: Text('${shortcut.draft.displayType} • ${transactionAccountSummary(state, shortcut.draft)}'),
             onTap: () => showTransactionEditor(context, shortcut: shortcut),
-            trailing: PopupMenuButton<String>(onSelected: (value) async {
-              if (value == 'rename') { await saveShortcutDialog(context, shortcut.draft, existing: shortcut); }
-              if (value == 'delete') { await state.removeTransactionShortcut(shortcut.id); }
-            }, itemBuilder: (_) => const [PopupMenuItem(value: 'rename', child: Text('Rename')),
-              PopupMenuItem(value: 'delete', child: Text('Delete shortcut'))]),
-          ),
+            ),
+            Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 8), child: Wrap(
+              alignment: WrapAlignment.end, spacing: 8, runSpacing: 4, children: [
+                TextButton.icon(icon: const Icon(Icons.edit_rounded), label: const Text('Rename'),
+                  onPressed: () => saveShortcutDialog(context, shortcut.draft, existing: shortcut)),
+                TextButton.icon(icon: const Icon(Icons.delete_outline_rounded), label: const Text('Delete shortcut'),
+                  style: TextButton.styleFrom(foregroundColor: kSleekExpense),
+                  onPressed: () => state.removeTransactionShortcut(shortcut.id)),
+              ])),
+          ]),
         ));
       },
     ));
@@ -320,16 +329,17 @@ class _RecentlyDeletedTransactionsScreenState extends State<RecentlyDeletedTrans
 }
 
 Future<Map<String, double>?> showTransactionSplits(BuildContext context, {required MoneyTransactionType type,
-    required double total, required Map<String, double> initial}) => showYutakaPopup<Map<String, double>>(
+    required double total, required Map<String, double> initial, bool splitAccounts = false}) => showYutakaPopup<Map<String, double>>(
   context, maxWidth: 500, maxHeight: 650,
-  child: _TransactionSplitsPopup(type: type, total: total, initial: initial),
+  child: _TransactionSplitsPopup(type: type, total: total, initial: initial, splitAccounts: splitAccounts),
 );
 
 class _TransactionSplitsPopup extends StatefulWidget {
-  const _TransactionSplitsPopup({required this.type, required this.total, required this.initial});
+  const _TransactionSplitsPopup({required this.type, required this.total, required this.initial, required this.splitAccounts});
   final MoneyTransactionType type;
   final double total;
   final Map<String, double> initial;
+  final bool splitAccounts;
   @override
   State<_TransactionSplitsPopup> createState() => _TransactionSplitsPopupState();
 }
@@ -352,16 +362,20 @@ class _TransactionSplitsPopupState extends State<_TransactionSplitsPopup> {
   @override
   Widget build(BuildContext context) {
     final state = context.read<AppController>();
-    final categories = state.categories.where((category) => category.type ==
-        (widget.type == MoneyTransactionType.income ? CategoryType.income : CategoryType.expense)).toList();
+    final options = widget.splitAccounts
+        ? state.operatingAccounts.map((account) => (id: account.id, name: account.name, iconName: account.iconName)).toList()
+        : state.categories.where((category) => category.type ==
+            (widget.type == MoneyTransactionType.income ? CategoryType.income : CategoryType.expense))
+            .map((category) => (id: category.id, name: category.name, iconName: category.iconName)).toList();
+    final kind = widget.splitAccounts ? 'accounts' : 'categories';
     final sum = amounts.values.fold<double>(0, (sum, controller) => sum + (double.tryParse(controller.text) ?? 0));
     return Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text('Split categories', style: Theme.of(context).textTheme.titleLarge),
+      Text('Split $kind', style: Theme.of(context).textTheme.titleLarge),
       const SizedBox(height: 8),
-      Text('Allocate ${state.format(widget.total)} before any service charge. Fees are shared proportionally across categories.'),
+      Text('Allocate ${state.format(widget.total)} before any service charge. Fees are shared proportionally across $kind.'),
       const SizedBox(height: 12),
-      Flexible(child: SingleChildScrollView(child: Column(children: categories.map((category) {
+      Flexible(child: SingleChildScrollView(child: Column(children: options.map((category) {
         final controller = amounts.putIfAbsent(category.id, TextEditingController.new);
         return Padding(padding: const EdgeInsets.only(bottom: 10), child: TextField(
           contextMenuBuilder: yutakaTextFieldContextMenu,
@@ -381,18 +395,18 @@ class _TransactionSplitsPopupState extends State<_TransactionSplitsPopup> {
         const Spacer(),
         FilledButton(onPressed: () {
           final splits = <String, double>{};
-          for (final category in categories) {
+          for (final category in options) {
             final text = amounts[category.id]?.text.trim() ?? '';
             if (text.isEmpty) { continue; }
             final amount = double.tryParse(text);
             if (amount == null || !amount.isFinite || amount <= 0) {
-              setState(() => error = 'Enter positive amounts or leave a category blank.');
+              setState(() => error = 'Enter positive amounts or leave an amount blank.');
               return;
             }
             splits[category.id] = amount;
           }
           if (splits.length < 2 || splits.length > 20 || (splits.values.fold<double>(0, (sum, value) => sum + value) - widget.total).abs() > .005) {
-            setState(() => error = 'Use 2–20 categories whose amounts equal the total.');
+            setState(() => error = 'Use 2–20 $kind whose amounts equal the total.');
             return;
           }
           Navigator.pop(context, splits);
