@@ -9898,12 +9898,14 @@ class AppleSelectionField extends StatelessWidget {
     required this.option,
     required this.onTap,
     this.emptyText = 'Select',
+    this.trailing,
   });
 
   final String label;
   final SelectionOption? option;
   final VoidCallback onTap;
   final String emptyText;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -9973,6 +9975,10 @@ class AppleSelectionField extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  if (trailing != null) ...[
+                    trailing!,
+                    const SizedBox(width: 8),
+                  ],
                   Icon(Icons.keyboard_arrow_down_rounded, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ],
               ),
@@ -18733,6 +18739,48 @@ class _TransactionEditorState extends State<TransactionEditor> {
     FocusScope.of(context).unfocus();
   }
 
+  Future<void> _editCategorySplits() async {
+    _dismissAmountFocus();
+    final value = double.tryParse(amount.text) ?? 0;
+    if (!value.isFinite || value <= 0) {
+      showSnack(context, 'Enter the total amount before splitting.');
+      return;
+    }
+    final selected = await showTransactionSplits(context, type: type, total: value, initial: categorySplits);
+    if (!mounted || selected == null) { return; }
+    setState(() {
+      categorySplits = selected;
+      if (selected.isNotEmpty) { categoryId = selected.keys.first; }
+    });
+  }
+
+  Future<void> _saveShortcut() async {
+    _dismissAmountFocus();
+    if (fromAccountId == null || (type != MoneyTransactionType.transfer && categoryId == null) ||
+        (type == MoneyTransactionType.transfer && (toAccountId == null || toAccountId == fromAccountId))) {
+      showSnack(context, 'Choose the account and category first.');
+      return;
+    }
+    final now = DateTime.now();
+    final value = double.tryParse(amount.text) ?? 0;
+    final draft = MoneyTransaction(id: 'shortcut', type: type, amount: value, title: title.text.trim(),
+        notes: notes.text.trim(), categoryId: categoryId ?? '', fromAccountId: fromAccountId!, toAccountId: toAccountId,
+        categorySplits: categorySplits, accountSplits: accountSplits, serviceChargeEnabled: serviceChargeEnabled,
+        serviceChargeMode: serviceChargeMode, serviceChargeValue: serviceChargeValue, createdOn: now, updatedOn: now);
+    await saveShortcutDialog(context, draft);
+  }
+
+  Widget _splitControl({required bool accounts}) {
+    final active = accounts ? accountSplits.isNotEmpty : categorySplits.isNotEmpty;
+    return IconButton.outlined(
+      tooltip: accounts ? (active ? 'Edit account split' : 'Split accounts')
+          : (active ? 'Edit category split' : 'Split categories'),
+      onPressed: busy ? null : (accounts ? _editAccountSplits : _editCategorySplits),
+      style: IconButton.styleFrom(foregroundColor: kSleekAccent, minimumSize: const Size(48, 48)),
+      icon: const Icon(Icons.call_split_rounded, size: 20),
+    );
+  }
+
   Future<void> _editAccountSplits() async {
     _dismissAmountFocus();
     final value = double.tryParse(amount.text) ?? 0;
@@ -18945,7 +18993,8 @@ class _TransactionEditorState extends State<TransactionEditor> {
               ],
             )
           else if (categorySplits.isNotEmpty)
-            ExpressiveCard(padding: const EdgeInsets.all(14), child: Row(children: [
+            ExpressiveCard(onTap: busy ? null : _editCategorySplits,
+              padding: const EdgeInsets.all(14), child: Row(children: [
               const Icon(Icons.call_split_rounded, color: kSleekAccent),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -18953,10 +19002,13 @@ class _TransactionEditorState extends State<TransactionEditor> {
                 Text(categorySplits.keys.map((id) => state.categoryOf(id)?.name ?? 'Choose category').join(' + '),
                   style: Theme.of(context).textTheme.bodySmall),
               ])),
+              const SizedBox(width: 8),
+              _splitControl(accounts: false),
             ]))
           else if (type != MoneyTransactionType.transfer && widget.lockedCategory == null)
             AppleSelectionField(
               label: 'Category',
+              trailing: _splitControl(accounts: false),
               option: relevantCategories.where((c) => c.id == categoryId).firstOrNull == null ? null : optionFromCategory(relevantCategories.where((c) => c.id == categoryId).first),
               emptyText: 'Choose category',
               onTap: () async {
@@ -18980,46 +19032,9 @@ class _TransactionEditorState extends State<TransactionEditor> {
           if (widget.lockedCategory != null)
             ExpressiveCard(padding: const EdgeInsets.all(12), child: Row(children: [iconBubble(context, widget.lockedCategory!.iconName, widget.lockedCategory!.iconColor), const SizedBox(width: 12), Expanded(child: Text(widget.lockedCategory!.name, style: const TextStyle(fontWeight: FontWeight.w800)))])),
           const SizedBox(height: 12),
-          if (!isLoanTransaction) ...[
-            Row(children: [
-              if (type != MoneyTransactionType.transfer && widget.lockedCategory == null) ...[
-                Expanded(child: OutlinedButton.icon(onPressed: busy ? null : () async {
-                  _dismissAmountFocus();
-                  final value = double.tryParse(amount.text) ?? 0;
-                  if (!value.isFinite || value <= 0) {
-                    showSnack(context, 'Enter the total amount before splitting.');
-                    return;
-                  }
-                  final selected = await showTransactionSplits(context, type: type, total: value, initial: categorySplits);
-                  if (!mounted || selected == null) return;
-                  setState(() {
-                    categorySplits = selected;
-                    if (selected.isNotEmpty) { categoryId = selected.keys.first; }
-                  });
-                }, icon: const Icon(Icons.call_split_rounded, size: 18),
-                  label: Text(categorySplits.isEmpty ? 'Split' : '${categorySplits.length} categories'))),
-                const SizedBox(width: 8),
-              ],
-              Expanded(child: OutlinedButton.icon(onPressed: busy ? null : () async {
-                _dismissAmountFocus();
-                if (fromAccountId == null || (type != MoneyTransactionType.transfer && categoryId == null) ||
-                    (type == MoneyTransactionType.transfer && (toAccountId == null || toAccountId == fromAccountId))) {
-                  showSnack(context, 'Choose the account and category first.');
-                  return;
-                }
-                final now = DateTime.now();
-                final value = double.tryParse(amount.text) ?? 0;
-                final draft = MoneyTransaction(id: 'shortcut', type: type, amount: value, title: title.text.trim(),
-                    notes: notes.text.trim(), categoryId: categoryId ?? '', fromAccountId: fromAccountId!, toAccountId: toAccountId,
-                    categorySplits: categorySplits, accountSplits: accountSplits, serviceChargeEnabled: serviceChargeEnabled,
-                    serviceChargeMode: serviceChargeMode, serviceChargeValue: serviceChargeValue, createdOn: now, updatedOn: now);
-                await saveShortcutDialog(context, draft);
-              }, icon: const Icon(Icons.bolt_rounded, size: 18), label: const Text('Save shortcut'))),
-            ]),
-            const SizedBox(height: 12),
-          ],
           if (accountSplits.isNotEmpty)
-            ExpressiveCard(padding: const EdgeInsets.all(14), child: Row(children: [
+            ExpressiveCard(onTap: busy ? null : _editAccountSplits,
+              padding: const EdgeInsets.all(14), child: Row(children: [
               const Icon(Icons.call_split_rounded, color: kSleekAccent),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -19027,10 +19042,13 @@ class _TransactionEditorState extends State<TransactionEditor> {
                 Text(accountSplits.entries.map((entry) => '${state.accountOf(entry.key)?.name ?? 'Choose account'}: ${state.format(entry.value)}').join(' + '),
                   style: Theme.of(context).textTheme.bodySmall),
               ])),
+              const SizedBox(width: 8),
+              _splitControl(accounts: true),
             ]))
           else
             AppleSelectionField(
             label: type == MoneyTransactionType.transfer ? 'From account' : 'Account',
+            trailing: !isLoanTransaction && type != MoneyTransactionType.transfer ? _splitControl(accounts: true) : null,
             option: fromAccount == null ? null : optionFromAccount(fromAccount, state),
             emptyText: 'Choose account',
             onTap: () async {
@@ -19056,14 +19074,6 @@ class _TransactionEditorState extends State<TransactionEditor> {
               }
             },
           ),
-          if (!isLoanTransaction && type != MoneyTransactionType.transfer) ...[
-            const SizedBox(height: 8),
-            Align(alignment: Alignment.centerRight, child: OutlinedButton.icon(
-              onPressed: busy ? null : _editAccountSplits,
-              icon: const Icon(Icons.call_split_rounded, size: 18),
-              label: Text(accountSplits.isEmpty ? 'Split accounts' : 'Edit account split'),
-            )),
-          ],
           if (type == MoneyTransactionType.transfer) ...[
             const SizedBox(height: 12),
             AppleSelectionField(
@@ -19253,6 +19263,11 @@ class _TransactionEditorState extends State<TransactionEditor> {
               ),
             ),
           ]),
+          if (!isLoanTransaction) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(onPressed: busy ? null : _saveShortcut,
+              icon: const Icon(Icons.bolt_rounded, size: 18), label: const Text('Save shortcut')),
+          ],
           ],
         ),
       ),
