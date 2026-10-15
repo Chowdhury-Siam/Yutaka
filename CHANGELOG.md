@@ -1,5 +1,6 @@
 ## 1.0.1322+366
 
+- Correct the scroll regression test to wait for the list spring instead of waiting for repeating empty-state animations to stop. This test-only correction keeps the app and Worker versions unchanged.
 - Keep Transaction search, shortcuts, recently deleted, and record summary fixed below the app bar while the transaction list scrolls or overscrolls.
 - Retain elastic scrolling, lazy transaction rows, swipe actions, filter chips, search behavior, and bottom navigation clearance. Keep active filter chips within the scrolling list so long filter groups remain reachable.
 - Add pull-down and scrolling regression coverage for empty and populated history at standard and large text sizes. Retain previous fixes and Worker version 1.0.1305.
