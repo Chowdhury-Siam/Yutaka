@@ -49,15 +49,50 @@ void main() {
         expect(titleBounds.top, greaterThanOrEqualTo(toolbar.top));
         expect(titleBounds.bottom, lessThanOrEqualTo(toolbar.bottom));
         expect(find.byTooltip('Reorder accounts'), findsNothing);
+        if (scale > 1) {
+          await tester.ensureVisible(find.text('Add savings account'));
+          await tester.pumpAndSettle();
+        }
         expect(find.text('Add savings account').hitTestable(), findsOneWidget);
         final empty = tester.widget<EmptyCard>(find.byType(EmptyCard));
         expect(empty.animated, isTrue);
         expect(empty.compact, isTrue);
-        if (scale == 1) expect(tester.getSize(find.byType(EmptyCard)).height, lessThan(200));
+        final cardBounds = tester.getRect(find.byType(EmptyCard));
+        final actionBounds = tester.getRect(find.text('Add savings account'));
+        expect(actionBounds.left, greaterThanOrEqualTo(cardBounds.left));
+        expect(actionBounds.right, lessThanOrEqualTo(cardBounds.right));
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       }
     }
+  });
+
+  testWidgets('compact empty state is shorter than the standard card at the same width', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const compactKey = ValueKey('compact-empty');
+    const standardKey = ValueKey('standard-empty');
+    Widget card(Key key, bool compact) => EmptyCard(
+      key: key, compact: compact, animated: true, icon: Icons.savings_rounded,
+      title: 'No savings accounts',
+      body: 'Balance edits don’t affect income, expenses, or transaction history.',
+      action: () {}, actionLabel: 'Add savings account',
+    );
+    await tester.pumpWidget(MaterialApp(home: MediaQuery(
+      data: const MediaQueryData(size: Size(320, 800), disableAnimations: true),
+      child: Scaffold(body: SingleChildScrollView(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [card(compactKey, true), card(standardKey, false)]),
+      )),
+    )));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byKey(compactKey)).height,
+      lessThan(tester.getSize(find.byKey(standardKey)).height));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('savings pig moves and stops with reduced motion', (tester) async {
