@@ -81,7 +81,7 @@ void main() {
         if (dialog.key != 'Sort transactions') {
           expect(find.text(footer).hitTestable(), findsOneWidget);
         }
-        expect(tester.takeException(), isNull);
+        expect(tester.takeException(), isNull, reason: '${dialog.key}, $brightness, 2x text');
         await tester.tap(find.byTooltip('Close'));
         await tester.pumpAndSettle();
         expect(find.byType(CompactPopupContent), findsNothing);
@@ -107,6 +107,7 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Today'));
+    // Confirm before another frame: Done must read the latest draft selection.
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     expect(result, 'today');
