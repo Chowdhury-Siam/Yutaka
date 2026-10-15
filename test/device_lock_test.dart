@@ -15,6 +15,7 @@ void main() {
   var authenticationSucceeds = false;
   var authenticationCalls = 0;
   var widgetRefreshCalls = 0;
+  late DateTime now;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -22,6 +23,7 @@ void main() {
     authenticationSucceeds = false;
     authenticationCalls = 0;
     widgetRefreshCalls = 0;
+    now = DateTime(2026, 10, 15, 13);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'authenticate') {
         authenticationCalls++;
@@ -37,7 +39,7 @@ void main() {
   });
 
   Widget app() => ChangeNotifierProvider<AppController>.value(value: controller,
-    child: MaterialApp(home: DeviceLockGate(child: Scaffold(body: Column(children: [
+    child: MaterialApp(home: DeviceLockGate(now: () => now, child: Scaffold(body: Column(children: [
       const Text('Private transaction'), const DeviceLockSettingsTile(),
     ])))));
 
@@ -62,7 +64,7 @@ void main() {
         final tile = find.byType(SettingsTile);
         expect(find.descendant(of: tile, matching: find.byType(ExpressiveCard)), findsOneWidget);
         expect(find.descendant(of: tile, matching: find.byType(Switch)), findsOneWidget);
-        expect(find.text('Lock on exit • hide widget amounts'), findsOneWidget);
+        expect(find.text('Lock after 10 seconds away'), findsOneWidget);
         expect(tester.takeException(), isNull);
         // Wrapping text can grow the card; the control stays compact and tappable.
         final switchSize = tester.getSize(find.byType(Switch));
@@ -92,7 +94,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
-  testWidgets('failed authentication stays locked and leaving the app locks every route again', (tester) async {
+  testWidgets('failed authentication stays locked and background grace expires after ten seconds', (tester) async {
     controller.deviceLockEnabled = true;
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
@@ -109,9 +111,58 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     await tester.pump();
     expect(find.text('Private transaction'), findsNothing);
+    now = now.add(const Duration(seconds: 9));
+    await tester.pump(const Duration(seconds: 9));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(authenticationCalls, 2);
+    expect(find.text('Private transaction'), findsOneWidget);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    now = now.add(const Duration(seconds: 6));
+    await tester.pump(const Duration(seconds: 6));
+    // Later lifecycle events must not restart the original ten-second window.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    now = now.add(const Duration(seconds: 4));
+    await tester.pump(const Duration(seconds: 4));
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pumpAndSettle();
     expect(authenticationCalls, 3);
+    expect(find.text('Private transaction'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('resume checks elapsed time even when the background timer has not run', (tester) async {
+    controller.deviceLockEnabled = true;
+    authenticationSucceeds = true;
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(authenticationCalls, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    // Advance wall time without pumping the timer, as if Android suspended Dart.
+    now = now.add(const Duration(seconds: 11));
+    authenticationSucceeds = false;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(authenticationCalls, 2);
+    expect(find.text('Private transaction'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('disabling device lock cancels a pending background lock', (tester) async {
+    controller.deviceLockEnabled = true;
+    authenticationSucceeds = true;
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    controller.deviceLockEnabled = false;
+    controller.publishAutosavedNotes();
+    now = now.add(const Duration(seconds: 11));
+    await tester.pump(const Duration(seconds: 11));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(authenticationCalls, 1);
     expect(find.text('Private transaction'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
@@ -147,7 +198,8 @@ void main() {
       expect(authenticationCalls, 1);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-      await tester.pump();
+      now = now.add(const Duration(seconds: 20));
+      await tester.pump(const Duration(seconds: 20));
       // The result can arrive before Android reports the activity resumed.
       pending.complete(authenticated);
       await tester.pump();
@@ -159,6 +211,8 @@ void main() {
       // A later app visit is a fresh request after either outcome.
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      now = now.add(const Duration(seconds: 10));
+      await tester.pump(const Duration(seconds: 10));
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
       expect(authenticationCalls, 2);
