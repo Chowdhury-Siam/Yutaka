@@ -156,6 +156,8 @@ class _CalculatorPopupState extends State<CalculatorPopup> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
+    final accent = dark ? scheme.primary : scheme.onPrimaryContainer;
     const labels = {
       'AC': 'Clear', '±': 'Change sign', '%': 'Percent', '÷': 'Divide',
       '×': 'Multiply', '−': 'Subtract', '+': 'Add', '⌫': 'Backspace',
@@ -171,25 +173,40 @@ class _CalculatorPopupState extends State<CalculatorPopup> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(children: [
-              Expanded(child: Text('Calculator', style: theme.textTheme.titleLarge)),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.calculate_outlined, color: accent, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Calculator', style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600, letterSpacing: -.3,
+              ))),
               IconButton(
                 tooltip: 'Close calculator',
                 onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close_rounded),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  foregroundColor: scheme.onSurfaceVariant,
+                ),
+                icon: const Icon(Icons.close_rounded, size: 20),
               ),
             ]),
-            const SizedBox(height: 12),
+            const SizedBox(height: 20),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 20),
               decoration: BoxDecoration(
-                color: scheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(22),
+                border: Border(bottom: BorderSide(color: scheme.outlineVariant.withValues(alpha: .6))),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Text(_operator == null ? ' ' : '${_format(_total!)} $_operator',
-                    style: theme.textTheme.bodyMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 6),
+                    style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 8),
                 Semantics(
                   liveRegion: true,
                   child: FittedBox(
@@ -197,9 +214,11 @@ class _CalculatorPopupState extends State<CalculatorPopup> {
                     alignment: Alignment.centerRight,
                     child: Text(_error ? 'Error' : _entry,
                         key: const ValueKey('calculatorResult'),
-                        style: theme.textTheme.headlineLarge?.copyWith(
+                        style: theme.textTheme.displayMedium?.copyWith(
                             color: _error ? scheme.error : scheme.onSurface,
-                            fontWeight: FontWeight.w700)),
+                            fontSize: 48, height: 1.15, letterSpacing: -1.5,
+                            fontFeatures: const [ui.FontFeature.tabularFigures()],
+                            fontWeight: FontWeight.w400)),
                   ),
                 ),
               ]),
@@ -210,15 +229,15 @@ class _CalculatorPopupState extends State<CalculatorPopup> {
                 child: Text('Cannot calculate this value. Enter a number or tap AC.',
                     style: theme.textTheme.bodySmall),
               ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 20),
             for (final row in _keys)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: EdgeInsets.only(bottom: row == _keys.last ? 0 : 8),
                 child: Row(children: [
                   for (final key in row)
                     Expanded(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Semantics(
                           label: labels[key] ?? key,
                           excludeSemantics: true,
@@ -230,16 +249,21 @@ class _CalculatorPopupState extends State<CalculatorPopup> {
                               onPressed: () => _press(key),
                               style: FilledButton.styleFrom(
                                 backgroundColor: key == '=' ? scheme.primary
-                                    : '+−×÷'.contains(key) ? scheme.primaryContainer
-                                    : scheme.surfaceContainerHighest,
-                                foregroundColor: key == '=' ? scheme.onPrimary
-                                    : '+−×÷'.contains(key) ? scheme.onPrimaryContainer
+                                    : '+−×÷'.contains(key) ? scheme.primary.withValues(alpha: .10)
+                                    : ['AC', '±', '%'].contains(key) ? scheme.surfaceContainerHighest
+                                    : scheme.surfaceContainerHigh,
+                                foregroundColor: key == '=' ? (dark ? scheme.surface : scheme.onPrimaryContainer)
+                                    : '+−×÷'.contains(key) ? accent
+                                    : ['AC', '±', '%', '⌫'].contains(key) ? scheme.onSurfaceVariant
                                     : scheme.onSurface,
-                                minimumSize: const Size(48, 52),
+                                minimumSize: const Size(48, 54),
                                 padding: const EdgeInsets.symmetric(horizontal: 4),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                                textStyle: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w500),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               ),
-                              child: FittedBox(child: Text(key, style: const TextStyle(fontSize: 22))),
+                              child: key == '⌫'
+                                  ? const Icon(Icons.backspace_outlined, size: 21)
+                                  : FittedBox(child: Text(key, style: TextStyle(fontSize: key == 'AC' ? 17 : 23))),
                             ),
                           ),
                         ),
