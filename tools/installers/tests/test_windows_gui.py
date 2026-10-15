@@ -118,7 +118,7 @@ class WindowsGuiPollingTest(unittest.TestCase):
 
 
 class StyledControlsFixture(User32Fixture):
-    """A styled button requires activation, hover and a completed mouse press."""
+    """Queue native clicks after activation and route them to the visible control."""
     def __init__(self):
         super().__init__(phase="INSTALLATION NOT STARTED")
         self.controls.update({30: ("TNewButton", "Install Yutaka"),
@@ -128,12 +128,10 @@ class StyledControlsFixture(User32Fixture):
         self.foreground = None
         self.activate = True
         self.cursor = (0, 0)
-        self.pressed = None
         self.desktop_selected = True
         self.shortcut_created = None
-        self.queued = []
         self.input_events = []
-        self.native_pending = False
+        self.native_pending = []
 
     def GetAncestor(self, handle, flag):
         return 1
@@ -162,47 +160,25 @@ class StyledControlsFixture(User32Fixture):
         self.cursor = (x, y)
         return 1
 
-    def handle_mouse(self, handle, message, position):
-        origin_x, origin_y, width, height = self.bounds[handle]
-        x, y = position & 0xffff, position >> 16
-        inside = (0 <= x < width and 0 <= y < height and
-                  self.cursor == (origin_x + x, origin_y + y) and self.foreground == 1)
-        if message == 0x0201 and inside:
-            self.pressed = handle
-        if message == 0x0202:
-            if self.pressed == handle and inside:
-                if handle == 30:
-                    self.shortcut_created = self.desktop_selected
-                    self.controls[20] = ("TNewStaticText", "INSTALLATION COMPLETE")
-            self.pressed = None
-
-    def SendMessageTimeoutW(self, handle, message, wparam, lparam, flags, timeout, result):
-        self.messages.append((handle, message))
-        self.handle_mouse(handle, message, lparam)
-        return 1
-
-    def PostMessageW(self, handle, message, wparam, lparam):
-        self.queued.append((handle, message, lparam))
-        return 1
-
     def SendInput(self, count, events, size):
-        self.input_events.extend((events[i].type, events[i].payload.mouse.dwFlags)
-                                 for i in range(count))
-        self.native_pending = True
+        inputs = [(events[i].type, events[i].payload.mouse.dwFlags) for i in range(count)]
+        self.input_events.extend(inputs)
+        for handle, (x, y, width, height) in self.bounds.items():
+            if x <= self.cursor[0] < x + width and y <= self.cursor[1] < y + height:
+                self.native_pending.append((handle, inputs))
         return count
 
     def dispatch_native(self, _=None):
-        if self.native_pending:
-            self.native_pending = False
-            self.desktop_selected = not self.desktop_selected
-            self.controls[50] = ("TNewStaticText", "TEST DESKTOP SHORTCUT: " + str(int(self.desktop_selected)))
-
-    def dispatch_queued(self):
-        for handle, message, position in self.queued:
-            # A plain BM_CLICK does not supply the styled control's hover path.
-            if message != 0x00F5:
-                self.handle_mouse(handle, message, position)
-        self.queued.clear()
+        pending, self.native_pending = self.native_pending, []
+        for handle, inputs in pending:
+            if self.foreground != 1 or inputs != [(0, 0x0002), (0, 0x0004)]:
+                continue
+            if handle == 40:
+                self.desktop_selected = not self.desktop_selected
+                self.controls[50] = ("TNewStaticText", "TEST DESKTOP SHORTCUT: " + str(int(self.desktop_selected)))
+            elif handle == 30:
+                self.shortcut_created = self.desktop_selected
+                self.controls[20] = ("TNewStaticText", "INSTALLATION COMPLETE")
 
 
 class WindowsGuiClickTest(unittest.TestCase):
@@ -218,7 +194,7 @@ class WindowsGuiClickTest(unittest.TestCase):
         self.assertEqual(self.fixture.controls[20][1], "INSTALLATION NOT STARTED")
         self.assertEqual(self.fixture.foreground, 1)
         self.assertEqual(self.fixture.cursor, (840, 584))
-        self.fixture.dispatch_queued()
+        self.fixture.dispatch_native()
         self.assertEqual(self.fixture.controls[20][1], "INSTALLATION COMPLETE")
 
     def test_checkbox_finishes_before_install_moves_cursor(self):
@@ -228,7 +204,7 @@ class WindowsGuiClickTest(unittest.TestCase):
         self.assertEqual(self.fixture.input_events, [(0, 0x0002), (0, 0x0004)])
         self.assertEqual(self.fixture.cursor, (304, 396))
         self.api.click(30)
-        self.fixture.dispatch_queued()
+        self.fixture.dispatch_native()
         self.assertEqual(self.fixture.controls[20][1], "INSTALLATION COMPLETE")
         self.assertFalse(self.fixture.shortcut_created)
 
@@ -238,7 +214,7 @@ class WindowsGuiClickTest(unittest.TestCase):
         with patch.object(gui.time, "sleep", side_effect=self.fixture.dispatch_native):
             self.api.click_checkbox(40, selected=True)
         self.api.click(30)
-        self.fixture.dispatch_queued()
+        self.fixture.dispatch_native()
         self.assertTrue(self.fixture.shortcut_created)
 
     def test_injected_click_without_state_change_fails_before_install(self):
@@ -266,13 +242,22 @@ class WindowsGuiClickTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "activate"):
                 self.api.click(30)
         self.assertEqual(self.fixture.messages, [])
-        self.assertEqual(self.fixture.queued, [])
+        self.assertEqual(self.fixture.input_events, [])
 
-    def test_unresponsive_mouse_handler_does_not_post_release(self):
-        with patch.object(self.fixture, "SendMessageTimeoutW", return_value=0):
-            with self.assertRaisesRegex(AssertionError, "did not process mouse"):
+    def test_button_does_not_synchronously_call_styled_mouse_handlers(self):
+        with patch.object(self.fixture, "SendMessageTimeoutW",
+                          side_effect=AssertionError("Do not enter styled handlers synchronously")):
+            self.api.click(30)
+        self.assertEqual(self.fixture.messages, [])
+        self.assertEqual(self.fixture.input_events, [(0, 0x0002), (0, 0x0004)])
+        self.fixture.dispatch_native()
+        self.assertEqual(self.fixture.controls[20][1], "INSTALLATION COMPLETE")
+
+    def test_partial_button_input_injection_is_rejected(self):
+        with patch.object(self.fixture, "SendInput", return_value=1):
+            with self.assertRaisesRegex(AssertionError, "was not injected"):
                 self.api.click(30)
-        self.assertEqual(self.fixture.queued, [])
+        self.assertEqual(self.fixture.controls[20][1], "INSTALLATION NOT STARTED")
 
 
 if __name__ == "__main__":
