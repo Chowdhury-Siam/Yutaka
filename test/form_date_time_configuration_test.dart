@@ -5,6 +5,42 @@ import 'package:yutaka/main.dart';
 import 'package:yutaka/models.dart';
 
 void main() {
+  for (final scale in [1.0, 2.0]) {
+    testWidgets('Repeat keeps all choices and cancellation on a short phone at $scale text', (tester) async {
+      tester.view.physicalSize = const Size(320, 480);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SubscriptionFrequency? result;
+      await tester.pumpWidget(MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)), child: child!),
+        home: Scaffold(body: Builder(builder: (context) => TextButton(
+          onPressed: () async => result = await showSubscriptionFrequencyPopup(context, SubscriptionFrequency.monthly),
+          child: const Text('Open'),
+        ))),
+      ));
+      for (final value in SubscriptionFrequency.values) {
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+        final choice = find.byKey(ValueKey('repeat-${value.name}'));
+        await tester.ensureVisible(choice);
+        await tester.pumpAndSettle();
+        await tester.tap(choice);
+        await tester.pumpAndSettle();
+        expect(result, value);
+        expect(tester.takeException(), isNull);
+      }
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+      expect(result, isNull);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets('single date/time changes remain a draft until Done', (tester) async {
     final initial = DateTime(2026, 10, 15, 16, 52);
     DateTime? saved;
