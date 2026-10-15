@@ -246,28 +246,61 @@ class TransactionShortcutsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppController>();
+    final scheme = Theme.of(context).colorScheme;
     return PageScaffold(title: 'Saved shortcuts', child: ResponsiveListContent(
-      header: const [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Save a shortcut from the transaction editor. Every use opens a new draft for review.'))],
+      desktopMaxWidth: 900,
+      header: [Padding(padding: const EdgeInsets.only(bottom: 16), child: Text(
+        'Tap a shortcut to review a new transaction.',
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+      ))],
       itemCount: state.transactionShortcuts.length,
       empty: const EmptyCard(icon: Icons.bolt_rounded, title: 'No shortcuts yet', body: 'Open Add transaction, choose an account and category, then tap Save shortcut.'),
       itemBuilder: (context, index) {
         final shortcut = state.transactionShortcuts[index];
-        return Padding(padding: const EdgeInsets.only(bottom: 10), child: ExpressiveCard(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            ListTile(leading: const Icon(Icons.bolt_rounded, color: kSleekAccent), title: Text(shortcut.name),
-            subtitle: Text('${shortcut.draft.displayType} • ${transactionAccountSummary(state, shortcut.draft)}'),
-            onTap: () => showTransactionEditor(context, shortcut: shortcut),
-            ),
-            Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 8), child: Wrap(
-              alignment: WrapAlignment.end, spacing: 8, runSpacing: 4, children: [
-                TextButton.icon(icon: const Icon(Icons.edit_rounded), label: const Text('Rename'),
-                  onPressed: () => saveShortcutDialog(context, shortcut.draft, existing: shortcut)),
-                TextButton.icon(icon: const Icon(Icons.delete_outline_rounded), label: const Text('Delete shortcut'),
-                  style: TextButton.styleFrom(foregroundColor: kSleekExpense),
-                  onPressed: () => state.removeTransactionShortcut(shortcut.id)),
-              ])),
-          ]),
-        ));
+        final type = switch (shortcut.draft.type) {
+          MoneyTransactionType.income => 'Income',
+          MoneyTransactionType.expense => 'Expense',
+          MoneyTransactionType.transfer => 'Transfer',
+        };
+        final details = ListTile(
+          contentPadding: EdgeInsets.zero, minVerticalPadding: 0, horizontalTitleGap: 12,
+          leading: Container(width: 40, height: 40,
+            decoration: BoxDecoration(color: kSleekAccent.withOpacity(.12), borderRadius: BorderRadius.circular(13)),
+            child: const Icon(Icons.bolt_rounded, color: kSleekAccent, size: 22)),
+          title: Text(shortcut.name, maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+          subtitle: Text('$type • ${transactionAccountSummary(state, shortcut.draft)}',
+            maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+          onTap: () => showTransactionEditor(context, shortcut: shortcut),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        );
+        final buttons = [
+          OutlinedButton.icon(icon: const Icon(Icons.edit_rounded, size: 17), label: const Text('Rename'),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
+            onPressed: () => saveShortcutDialog(context, shortcut.draft, existing: shortcut)),
+          OutlinedButton.icon(icon: const Icon(Icons.delete_outline_rounded, size: 17), label: const Text('Delete shortcut'),
+            style: OutlinedButton.styleFrom(foregroundColor: kSleekExpense,
+              side: BorderSide(color: kSleekExpense.withOpacity(.3)),
+              backgroundColor: kSleekExpense.withOpacity(.06), minimumSize: const Size(0, 44),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
+            onPressed: () => state.removeTransactionShortcut(shortcut.id)),
+        ];
+        return ExpressiveCard(padding: const EdgeInsets.all(14), radius: 20, surfaceTint: false,
+          child: LayoutBuilder(builder: (context, constraints) {
+            final inline = constraints.maxWidth >= 540 && MediaQuery.textScalerOf(context).scale(14) <= 18;
+            if (inline) {
+              return Row(children: [Expanded(child: details), const SizedBox(width: 12),
+                buttons[0], const SizedBox(width: 8), buttons[1]]);
+            }
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+              details,
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: buttons),
+            ]);
+          }),
+        );
       },
     ));
   }
