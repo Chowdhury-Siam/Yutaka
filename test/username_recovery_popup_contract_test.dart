@@ -21,7 +21,7 @@ void main() {
     expect(models, isNot(contains('recoveryKey')));
   });
 
-  test('center popup bodies use fixed adaptive content instead of full-card scrolling', () {
+  test('center popups keep fixed content with a bounded scrollable interest form', () {
     final app = File('lib/main.dart').readAsStringSync();
     final loans = File('lib/loans/loan_sheets.dart').readAsStringSync();
     final profile = File('lib/profile/profile_ui.dart').readAsStringSync();
@@ -33,7 +33,16 @@ void main() {
     final popupEnd = app.indexOf('// -----------------------------------------------------------------------------\n// Onboarding', popupStart);
     final popupBody = app.substring(popupStart, popupEnd);
     expect(popupBody, isNot(contains('SingleChildScrollView(')));
-    final loanEditors = loans.substring(0, loans.indexOf('Future<void> showLoanPreferencesSheet'));
+    final interestStart = loans.indexOf('Future<LoanInterestConfiguration?> showLoanInterestConfiguration(');
+    final interestEnd = loans.indexOf('Future<void> showLoanEditorSheet', interestStart);
+    expect(interestStart, greaterThanOrEqualTo(0));
+    expect(interestEnd, greaterThan(interestStart));
+    final interest = loans.substring(interestStart, interestEnd);
+    expect(interest, contains('Flexible('));
+    expect(interest, contains('SingleChildScrollView('));
+    expect(interest, isNot(contains('YutakaPopupContent(')));
+    final loanEditors = loans.substring(0, interestStart) +
+        loans.substring(interestEnd, loans.indexOf('Future<void> showLoanPreferencesSheet'));
     expect(loanEditors, isNot(contains('SingleChildScrollView(')));
     expect(profile, isNot(contains('SingleChildScrollView(')));
   });
