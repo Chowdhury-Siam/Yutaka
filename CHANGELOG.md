@@ -1,3 +1,11 @@
+## 1.0.1325+369
+
+- Separate date and time summaries onto explicit lines and keep AM/PM with its time. Top-align shared compact configuration buttons so adjacent headings line up.
+- Place loan Time • Date beside Interest, retaining the Due date control. Place subscription Time • Date beside Repeat with the existing recurrence choices.
+- Give Plan reminders and manual subscription entries the same combined date/time control. Reuse a shared draft picker with Cancel and Done while retaining native date/time selection.
+- Preserve transaction ranges, service-charge calculations, loan movement/interest rules, reminder permissions and scheduling, subscription auto pay and recurrence, and all saved data paths. Keep Worker version 1.0.1305 unchanged.
+- Add draft cancellation/confirmation and narrow-screen transaction alignment coverage; update the Repeat UI contract for its new configuration button.
+
 ## 1.0.1324+368
 
 - Place Time • Date and Service charge side by side with equal widths and matching heights in the shared transaction editor.
