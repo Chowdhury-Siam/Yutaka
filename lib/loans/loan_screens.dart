@@ -41,16 +41,27 @@ class _LoansScreenState extends State<LoansScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppController>();
+    final query = search.text.trim().toLowerCase();
+    // Reuse interest calculations within this build, never across clock/data
+    // changes. Sort comparisons must not recompute a loan's payment history.
+    final computations = <String, LoanComputation>{};
+    LoanComputation computationFor(Loan loan) => computations.putIfAbsent(loan.id, () => state.computationFor(loan.id));
+    final netByContact = <String, double>{};
+    for (final loan in state.loans) {
+      if (loan.status == LoanStatus.writtenOff) continue;
+      final outstanding = loanNonNegative(computationFor(loan).outstanding);
+      netByContact[loan.contactId] = (netByContact[loan.contactId] ?? 0.0) + (loan.isLent ? outstanding : -outstanding);
+    }
+    netByContact.updateAll((_, net) => roundLoanMoney(net));
     final visible = state.loans.where((loan) {
       if (loan.status == LoanStatus.writtenOff && !state.loanShowWrittenOff) return false;
-      final query = search.text.trim().toLowerCase();
       final contact = state.loanContactOf(loan.contactId);
       if (query.isNotEmpty &&
           !(contact?.name.toLowerCase().contains(query) ?? false) &&
           !loan.note.toLowerCase().contains(query)) {
         return false;
       }
-      final computation = state.computationFor(loan.id);
+      final computation = computationFor(loan);
       return switch (filter) {
         _LoanFilter.collect => loan.isLent && loan.status == LoanStatus.active && !computation.settled,
         _LoanFilter.pay => !loan.isLent && loan.status == LoanStatus.active && !computation.settled,
@@ -64,13 +75,13 @@ class _LoansScreenState extends State<LoansScreen> {
       if (contact != null) grouped.putIfAbsent(contact, () => <Loan>[]).add(loan);
     }
     final contacts = grouped.keys.toList()
-      ..sort((a, b) => state.netWithLoanContact(b.id).abs().compareTo(state.netWithLoanContact(a.id).abs()));
+      ..sort((a, b) => (netByContact[b.id] ?? 0.0).abs().compareTo((netByContact[a.id] ?? 0.0).abs()));
     final items = <Object>[];
     for (final contact in contacts) {
       final contactLoans = grouped[contact]!
         ..sort((a, b) {
-        final ac = state.computationFor(a.id);
-        final bc = state.computationFor(b.id);
+        final ac = computationFor(a);
+        final bc = computationFor(b);
         if (ac.overdue != bc.overdue) return ac.overdue ? -1 : 1;
         if (a.dueDate == null && b.dueDate != null) return 1;
         if (a.dueDate != null && b.dueDate == null) return -1;
@@ -160,7 +171,7 @@ class _LoansScreenState extends State<LoansScreen> {
         itemBuilder: (context, index) {
           final item = items[index];
           if (item is _LoanContactGroup) {
-            final net = state.netWithLoanContact(item.contact.id);
+            final net = netByContact[item.contact.id] ?? 0.0;
             return Padding(
               padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
               child: Row(
