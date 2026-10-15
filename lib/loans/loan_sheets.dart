@@ -1037,7 +1037,7 @@ class _LoanPaymentSheetState extends State<_LoanPaymentSheet> {
 }
 
 Future<void> showLoanPreferencesSheet(BuildContext context) {
-  return showYutakaPopup<void>(context, maxWidth: 540, maxHeight: 680, child: const _LoanPreferencesSheet());
+  return showYutakaPopup<void>(context, maxWidth: 500, maxHeight: 600, child: const _LoanPreferencesSheet());
 }
 
 class _LoanPreferencesSheet extends StatelessWidget {
@@ -1046,55 +1046,51 @@ class _LoanPreferencesSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppController>();
-    return SingleChildScrollView(child: Padding(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(child: Text('Loan preferences', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900))),
-              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
-            ],
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: state.loanShowTypeOptions,
-            onChanged: (value) => state.setLoanPreferences(showTypeOptions: value),
-            title: const Text('Show loan type options', style: TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: const Text('Ask New loan or Existing loan before opening the form. When off, use New loan.'),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: state.loanRecordTransactionsByDefault,
-            onChanged: (value) => state.setLoanPreferences(recordTransactions: value),
-            title: const Text('Record account movements by default', style: TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: const Text('These movements never count as income or expenses.'),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: state.loanTransactionsVisibleInTransactionList,
-            onChanged: (value) => state.setLoanPreferences(showTransactionsInTransactionList: value),
-            title: const Text('Show loan transactions in Transaction', style: TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: const Text('Turn this off to hide loan-linked movements from the main Transaction list.'),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: state.loanRemindersEnabled,
-            onChanged: (value) => state.setLoanPreferences(reminders: value),
-            title: const Text('Due-date reminders', style: TextStyle(fontWeight: FontWeight.w800)),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: state.loanShowWrittenOff,
-            onChanged: (value) => state.setLoanPreferences(showWrittenOff: value),
-            title: const Text('Show written-off records', style: TextStyle(fontWeight: FontWeight.w800)),
-          ),
-          const SizedBox(height: 10),
-          FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
-        ],
-      ),
+    final theme = Theme.of(context);
+    final tileTheme = theme.copyWith(listTileTheme: theme.listTileTheme.copyWith(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      titleTextStyle: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+      subtitleTextStyle: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
     ));
+    return CompactPopupContent(
+      title: 'Loan preferences',
+      actions: FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
+      child: Theme(
+        data: tileTheme,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            SwitchListTile(
+              value: state.loanShowTypeOptions,
+              onChanged: (value) => state.setLoanPreferences(showTypeOptions: value),
+              title: const Text('Show loan type options'),
+              subtitle: const Text('Choose New or Existing before adding a loan. Off uses New loan.'),
+            ),
+            SwitchListTile(
+              value: state.loanRecordTransactionsByDefault,
+              onChanged: (value) => state.setLoanPreferences(recordTransactions: value),
+              title: const Text('Record account movements'),
+              subtitle: const Text('Default for new loans. Excluded from income and expenses.'),
+            ),
+            SwitchListTile(
+              value: state.loanTransactionsVisibleInTransactionList,
+              onChanged: (value) => state.setLoanPreferences(showTransactionsInTransactionList: value),
+              title: const Text('Show in Transaction'),
+              subtitle: const Text('Include loan-linked account movements in the list.'),
+            ),
+            SwitchListTile(
+              value: state.loanRemindersEnabled,
+              onChanged: (value) => state.setLoanPreferences(reminders: value),
+              title: const Text('Due-date reminders'),
+            ),
+            SwitchListTile(
+              value: state.loanShowWrittenOff,
+              onChanged: (value) => state.setLoanPreferences(showWrittenOff: value),
+              title: const Text('Show written-off records'),
+            ),
+          ]),
+        ),
+      ),
+    );
   }
 }
