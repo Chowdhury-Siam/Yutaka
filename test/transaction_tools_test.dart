@@ -295,6 +295,79 @@ void main() {
     });
   }
 
+  testWidgets('shortcut and trash empty icons move and respect reduced motion', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final entry in [
+      (screen: const TransactionShortcutsScreen(), icon: Icons.bolt_rounded),
+      (screen: const RecentlyDeletedTransactionsScreen(), icon: Icons.delete_outline_rounded),
+    ]) {
+      Widget page(bool reduced) => ChangeNotifierProvider<AppController>.value(
+        value: controller,
+        child: MaterialApp(home: MediaQuery(
+          data: MediaQueryData(size: const Size(800, 900), disableAnimations: reduced),
+          child: entry.screen,
+        )),
+      );
+      await tester.pumpWidget(page(false));
+      // The database is already open; let the trash query finish before testing its icon.
+      await tester.runAsync(() => controller.database.deletedTransactions());
+      await tester.pump();
+      expect(tester.widget<EmptyCard>(find.byType(EmptyCard)).animated, isTrue);
+      final icon = find.byIcon(entry.icon);
+      final start = tester.getCenter(icon);
+      await tester.pump(const Duration(milliseconds: 650));
+      expect(tester.getCenter(icon), isNot(start));
+      await tester.pumpWidget(page(true));
+      final stopped = tester.getCenter(icon);
+      await tester.pump(const Duration(milliseconds: 650));
+      expect(tester.getCenter(icon), stopped);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  for (final splitAccounts in [false, true]) {
+    testWidgets('${splitAccounts ? 'account' : 'category'} split shows allocation status and returns validated shares', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      Map<String, double>? result;
+      await tester.pumpWidget(ChangeNotifierProvider<AppController>.value(
+        value: controller,
+        child: MaterialApp(home: Scaffold(body: Builder(builder: (context) => TextButton(
+          onPressed: () async {
+            result = await showTransactionSplits(context, type: MoneyTransactionType.expense,
+              total: 100, initial: {}, splitAccounts: splitAccounts);
+          },
+          child: const Text('Split'),
+        )))),
+      ));
+      await tester.tap(find.text('Split'));
+      await tester.pumpAndSettle();
+      final ids = splitAccounts ? ['cash', 'bank'] : controller.categories
+          .where((c) => c.type == CategoryType.expense).take(2).map((c) => c.id).toList();
+      final first = find.byKey(ValueKey('split-amount-${ids[0]}'));
+      final second = find.byKey(ValueKey('split-amount-${ids[1]}'));
+      await tester.enterText(first, '60');
+      await tester.enterText(second, '50');
+      await tester.pump();
+      expect(find.text('Over by ${controller.format(10)}'), findsOneWidget);
+      await tester.tap(find.text('Done'));
+      await tester.pump();
+      expect(result, isNull);
+      expect(find.text('Use 2–20 ${splitAccounts ? 'accounts' : 'categories'} whose amounts equal the total.'), findsOneWidget);
+      await tester.enterText(second, '40');
+      await tester.pump();
+      expect(find.text('Fully allocated'), findsOneWidget);
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      expect(result, {ids[0]: 60.0, ids[1]: 40.0});
+      expect(controller.transactions, isEmpty);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets('account split popup validates amounts before saving a reviewed draft', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -311,8 +384,8 @@ void main() {
     await tester.ensureVisible(splitButton);
     await tester.tap(splitButton);
     await tester.pumpAndSettle();
-    final cash = find.byWidgetPredicate((widget) => widget is TextField && widget.decoration?.labelText == 'Cash');
-    final bank = find.byWidgetPredicate((widget) => widget is TextField && widget.decoration?.labelText == 'Bank');
+    final cash = find.byKey(const ValueKey('split-amount-cash'));
+    final bank = find.byKey(const ValueKey('split-amount-bank'));
     await tester.enterText(cash, '60');
     await tester.enterText(bank, '50');
     await tester.tap(find.text('Done'));
