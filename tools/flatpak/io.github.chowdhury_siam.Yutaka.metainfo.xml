@@ -32,6 +32,12 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1327" date="2026-10-15">
+      <description><p>Refine shared scrollbar styling.</p></description>
+    </release>
+    <release version="1.0.1326" date="2026-10-15">
+      <description><p>Compact form controls and recurrence choices.</p></description>
+    </release>
     <release version="1.0.1325" date="2026-10-15">
       <description><p>Unify transaction, loan, subscription and Plan date/time controls with aligned compact buttons and clear date/time summaries.</p></description>
     </release>
