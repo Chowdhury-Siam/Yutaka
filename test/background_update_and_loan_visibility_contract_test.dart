@@ -26,7 +26,8 @@ void main() {
     expect(app, contains('bool loanTransactionsVisibleInTransactionList = true;'));
     expect(app, contains('List<MoneyTransaction> transactionListTransactions({'));
     expect(app, contains('visible.where((tx) => !tx.isLoanTransaction).toList()'));
-    expect(app, contains('final visibleTransactions = state.transactionListTransactions();'));
+    expect(app, contains('_visibleTransactions = state.transactionListTransactions();'));
+    expect(app, contains('final visibleTransactions = _visibleTransactions;'));
     expect(app, contains('final txs = visibleTransactions.where((tx) => transactionMatchesSearch(state, tx, search.text)).toList();'));
     expect(controller, contains('showTransactionsInTransactionList'));
     expect(sheet, contains('Show in Transaction'));
