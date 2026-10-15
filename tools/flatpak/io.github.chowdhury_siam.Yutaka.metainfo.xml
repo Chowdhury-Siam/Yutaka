@@ -32,6 +32,15 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1318" date="2026-10-15">
+      <description><p>Reduce repeated finance UI, search, sort, and painting work while preserving visual effects; show authentication automatically with the Yutaka logo.</p></description>
+    </release>
+    <release version="1.0.1317" date="2026-10-15">
+      <description><p>Fix split progress accessibility, short-screen split layout, rapid date selection, and compact device-lock sizing.</p></description>
+    </release>
+    <release version="1.0.1316" date="2026-10-15">
+      <description><p>Fix the Savings Accounts heading and compact its empty state with an animated pig icon.</p></description>
+    </release>
     <release version="1.0.1315" date="2026-10-15">
       <description><p>Compact split allocation dialogs and animate shortcut and recently deleted empty states.</p></description>
     </release>
