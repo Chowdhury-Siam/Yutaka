@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1309" date="2026-10-15">
+      <description><p>Refresh the calculator and make loan interest settings clearer, with explained choices, visible timing options, and inline rate validation.</p></description>
+    </release>
     <release version="1.0.1308" date="2026-10-15">
       <description><p>Compact the Transaction header, search tools, and record summary to leave more space for transactions.</p></description>
     </release>
