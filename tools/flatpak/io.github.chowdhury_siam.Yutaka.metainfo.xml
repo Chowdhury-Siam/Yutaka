@@ -32,6 +32,15 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1322" date="2026-10-15">
+      <description><p>Keep transaction search and record summary fixed while preserving list scrolling and pull-down motion.</p></description>
+    </release>
+    <release version="1.0.1321" date="2026-10-15">
+      <description><p>Redesign date, category, account, and currency selection with compact date tiles and animated shaped cards.</p></description>
+    </release>
+    <release version="1.0.1320" date="2026-10-15">
+      <description><p>Lock after ten seconds in the background and remove the widget Settings entry while retaining launcher widget support.</p></description>
+    </release>
     <release version="1.0.1319" date="2026-10-15">
       <description><p>Fix large-text picker footer layout and correct accessibility cleanup, cached-list contracts, and responsive savings layout tests.</p></description>
     </release>
