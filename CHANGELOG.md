@@ -1,3 +1,9 @@
+## 1.0.1323+367
+
+- Move Add account and Add category below the choices, above Cancel and Done, in the shared picker footer.
+- With large text, place creation last in the scrolling choices to keep the heading and confirmation actions reachable on short screens.
+- Retain selection animations, inline creation results, cancellation and confirmation. Add bottom-placement, scrolling and creation regression coverage; retain prior fixes and Worker version 1.0.1305.
+
 ## 1.0.1322+366
 
 - Use native mouse input for all Windows installer GUI-test controls, avoiding synchronous styled-button mouse-message timeouts. Retain cancellation, path, shortcut, install, upgrade, preservation and launch checks; keep release versions unchanged for this test-only fix.
