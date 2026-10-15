@@ -31,17 +31,48 @@ void main() {
       const Text('Private transaction'), const DeviceLockSettingsTile(),
     ])))));
 
+  testWidgets('device lock uses the shared compact card and wraps on narrow screens', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    for (final brightness in Brightness.values) {
+      for (final scale in [1.0, 2.0]) {
+        await tester.pumpWidget(ChangeNotifierProvider<AppController>.value(
+          value: controller,
+          child: MaterialApp(
+            theme: ThemeData(brightness: brightness, useMaterial3: true),
+            home: MediaQuery(
+              data: MediaQueryData(size: const Size(320, 800), textScaler: TextScaler.linear(scale)),
+              child: const Scaffold(body: Column(children: [DeviceLockSettingsTile()])),
+            ),
+          ),
+        ));
+        await tester.pumpAndSettle();
+        final tile = find.byType(SettingsTile);
+        expect(find.descendant(of: tile, matching: find.byType(ExpressiveCard)), findsOneWidget);
+        expect(find.descendant(of: tile, matching: find.byType(Switch)), findsOneWidget);
+        expect(find.text('Lock on exit • hide widget amounts'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        if (scale == 1.0) {
+          expect(tester.getSize(tile).height, lessThan(110));
+        }
+      }
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('lock is opt-in and enabling requires successful device authentication', (tester) async {
     await tester.pumpWidget(app());
     expect(find.text('Private transaction'), findsOneWidget);
-    final toggle = find.byType(SwitchListTile);
+    final toggle = find.byType(Switch);
     await tester.tap(toggle);
     await tester.pumpAndSettle();
     expect(controller.deviceLockEnabled, isFalse);
     await tester.tap(find.byTooltip('Dismiss'));
     await tester.pumpAndSettle();
     authenticationSucceeds = true;
-    await tester.tap(toggle);
+    await tester.tap(find.text('Fingerprint / device lock'));
     await tester.pumpAndSettle();
     expect(controller.deviceLockEnabled, isTrue);
     expect(await controller.prefs.getBool('deviceLockEnabled', false), isTrue);
