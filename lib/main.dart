@@ -10080,6 +10080,15 @@ Future<String?> showAppleWheelSelectionSheet(
     child: StatefulBuilder(builder: (dialogContext, setModalState) {
       final theme = Theme.of(dialogContext);
       final largeText = MediaQuery.textScalerOf(dialogContext).scale(14) > 18;
+      final scrollAddAction = hasAddAction && largeText;
+      final addButton = hasAddAction ? SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          key: const ValueKey('choice-add-action'),
+          onPressed: () => Navigator.pop(dialogContext, _selectionAddActionResult),
+          icon: const Icon(Icons.add_rounded, size: 18), label: Text(addActionLabel),
+        ),
+      ) : null;
       final query = search.trim().toLowerCase();
       final visible = orderedOptions.where((option) => query.isEmpty ||
         '${option.title} ${option.subtitle} ${option.symbol ?? ''}'.toLowerCase().contains(query)).toList();
@@ -10112,6 +10121,10 @@ Future<String?> showAppleWheelSelectionSheet(
         actions: Column(mainAxisSize: MainAxisSize.min, children: [
           Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(.4)),
           const SizedBox(height: 10),
+          if (hasAddAction && !scrollAddAction) ...[
+            addButton!,
+            const SizedBox(height: 8),
+          ],
           Row(children: [
             Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel'))),
             const SizedBox(width: 8),
@@ -10147,26 +10160,23 @@ Future<String?> showAppleWheelSelectionSheet(
             constraints: BoxConstraints(maxHeight: tileLayout && !largeText ? 320 : 344),
             child: LayoutBuilder(builder: (context, constraints) {
               final useTiles = tileLayout && !largeText && constraints.maxWidth >= 260;
-              final prefixCount = hasAddAction ? 1 : 0;
               final rows = useTiles ? (visible.length / 2).ceil() : visible.length;
+              final bodyCount = visible.isEmpty ? 1 : rows;
               return Scrollbar(controller: listController, child: ListView.builder(
                 key: const ValueKey('choice-options-list'),
                 controller: listController, shrinkWrap: true, padding: EdgeInsets.zero,
                 physics: optimizedScrollPhysics(dialogContext),
-                itemCount: prefixCount + (visible.isEmpty ? 1 : rows),
+                itemCount: bodyCount + (scrollAddAction ? 1 : 0),
                 itemBuilder: (context, index) {
-                  if (hasAddAction && index == 0) {
-                    return Padding(padding: const EdgeInsets.only(bottom: 8), child: OutlinedButton.icon(
-                      onPressed: () => Navigator.pop(dialogContext, _selectionAddActionResult),
-                      icon: const Icon(Icons.add_rounded, size: 18), label: Text(addActionLabel),
-                    ));
+                  if (scrollAddAction && index == bodyCount) {
+                    return Padding(padding: const EdgeInsets.only(top: 8), child: addButton!);
                   }
                   if (visible.isEmpty) {
                     return Padding(padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
                       child: Text(query.isNotEmpty ? 'No matches found' : 'Nothing here yet. Add one to continue.',
                         style: theme.textTheme.bodyMedium));
                   }
-                  final row = index - prefixCount;
+                  final row = index;
                   if (!useTiles) return Padding(padding: const EdgeInsets.only(bottom: 6), child: choice(visible[row]));
                   return Padding(padding: const EdgeInsets.only(bottom: 8), child: IntrinsicHeight(child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
