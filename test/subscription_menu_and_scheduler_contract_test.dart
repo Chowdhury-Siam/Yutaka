@@ -83,7 +83,7 @@ void main() {
     expect(app, contains("label: 'Spend from account'"));
     expect(app, contains("label: 'Category'"));
     expect(app, contains("labelText: 'Price'"));
-    expect(app, contains("labelText: 'Repeat'"));
+    expect(app, contains("title: 'Repeat'"));
     expect(app, contains('showSubscriptionFrequencyPopup(context, frequency)'));
     expect(app, contains('scheme.outlineVariant.withOpacity(.34)'));
     expect(app, contains('kSleekAccent.withOpacity(.56)'));
