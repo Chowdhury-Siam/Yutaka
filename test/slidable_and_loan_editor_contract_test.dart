@@ -31,7 +31,7 @@ void main() {
 
     final switcherIndex = app.indexOf('child: AnimatedSwitcher(');
     final keyedStageIndex = app.indexOf('key: ValueKey<int>(tabIndex)', switcherIndex);
-    final pageIndex = app.indexOf('Positioned.fill(child: pages[tabIndex])', keyedStageIndex);
+    final pageIndex = app.indexOf('Positioned.fill(child: RepaintBoundary(child: pages[tabIndex]))', keyedStageIndex);
     final menuIndex = app.indexOf('if (transactionMenuButton != null) ...[', keyedStageIndex);
     final actionIndex = app.indexOf('if (actionButton != null)', keyedStageIndex);
     final dockIndex = app.indexOf('child: _FloatingDockNavigation(', keyedStageIndex);
