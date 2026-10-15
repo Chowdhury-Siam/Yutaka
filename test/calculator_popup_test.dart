@@ -27,7 +27,8 @@ void main() {
 
   Future<void> press(WidgetTester tester, List<String> keys) async {
     for (final key in keys) {
-      await tester.tap(find.widgetWithText(FilledButton, key));
+      await tester.tap(key == '⌫' ? find.byIcon(Icons.backspace_outlined)
+          : find.widgetWithText(FilledButton, key));
       await tester.pump();
     }
   }
