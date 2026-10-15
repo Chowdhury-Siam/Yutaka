@@ -6802,6 +6802,18 @@ class AppController extends ChangeNotifier {
 
   double get totalAccountBalance => _totalAccountBalance;
 
+  // Finance pages do not depend on download percentages or sync status. Lists
+  // are replaced on reload; the day also refreshes date-dependent summaries
+  // when a later notification arrives without a data change.
+  Object get financeViewState => (
+    data: (accounts, categories, transactions, budgets, loans, loanPayments, loanContacts),
+    filters: (dateRangeType, customStart, customEnd, filterAccountIds, filterCategoryIds, filterTypes),
+    display: (currencySymbol, currencyPosition, useSeparators, amountsHidden, compactHomeSummary),
+    loans: (loanShowWrittenOff, loanTransactionsVisibleInTransactionList),
+    sort: transactionSortMode,
+    day: DateUtils.dateOnly(DateTime.now()),
+  );
+
   String format(double amount) {
     if (amountsHidden) {
       return currencyPosition == CurrencyPosition.prefix ? '$currencySymbol••••' : '••••$currencySymbol';
@@ -7262,6 +7274,11 @@ class AppController extends ChangeNotifier {
   }
 
   List<MoneyTransaction> filteredTransactions({String? categoryId, String? accountId, List<MoneyTransactionType>? types, bool ignoreDate = false}) {
+    return _matchingTransactions(categoryId: categoryId, accountId: accountId, types: types, ignoreDate: ignoreDate).toList()
+      ..sort(_compareTransactionDateNewest);
+  }
+
+  Iterable<MoneyTransaction> _matchingTransactions({String? categoryId, String? accountId, List<MoneyTransactionType>? types, bool ignoreDate = false}) {
     final range = activeRange();
     return transactions.where((tx) {
       if (!ignoreDate) {
@@ -7277,8 +7294,7 @@ class AppController extends ChangeNotifier {
       if (accountId != null && !tx.accountIds.contains(accountId)) { return false; }
       if (types != null && !types.contains(tx.type)) return false;
       return true;
-    }).toList()
-      ..sort(_compareTransactionDateNewest);
+    });
   }
 
   int _compareTransactionDateNewest(MoneyTransaction a, MoneyTransaction b) {
@@ -7365,7 +7381,7 @@ class AppController extends ChangeNotifier {
     bool ignoreDate = false,
     bool respectLoanVisibility = true,
   }) {
-    final visible = filteredTransactions(categoryId: categoryId, ignoreDate: ignoreDate);
+    final visible = _matchingTransactions(categoryId: categoryId, ignoreDate: ignoreDate);
     final result = !respectLoanVisibility || loanTransactionsVisibleInTransactionList
         ? List<MoneyTransaction>.of(visible)
         : visible.where((tx) => !tx.isLoanTransaction).toList();
@@ -8783,7 +8799,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver, Sing
                     key: ValueKey<int>(tabIndex),
                     child: Stack(
                       children: [
-                        Positioned.fill(child: pages[tabIndex]),
+                        Positioned.fill(child: RepaintBoundary(child: pages[tabIndex])),
                         if (transactionMenuButton != null) ...[
                           Positioned.fill(
                             child: AnimatedBuilder(
@@ -9313,6 +9329,7 @@ class PageScaffold extends StatelessWidget {
     this.floatingActionButton,
     this.titleTrailing,
     this.compactHeader = false,
+    this.wrapTitle = false,
   });
   final String title;
   final String? subtitle;
@@ -9321,19 +9338,37 @@ class PageScaffold extends StatelessWidget {
   final Widget? floatingActionButton;
   final Widget? titleTrailing;
   final bool compactHeader;
+  final bool wrapTitle;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final small = AppBreakpoints.isSmall(context);
     final desktop = AppBreakpoints.isExpanded(context);
+    final theme = Theme.of(context);
+    final titleStyle = (theme.appBarTheme.titleTextStyle ?? theme.textTheme.titleLarge ?? const TextStyle()).copyWith(
+      fontSize: compactHeader ? 22 : desktop ? 26 : small ? 23 : 27,
+    );
+    var toolbarHeight = compactHeader
+        ? math.max(56.0, MediaQuery.textScalerOf(context).scale(22) * 1.2 + 16)
+        : desktop ? 70.0 : small ? 68.0 : 76.0;
+    if (wrapTitle) {
+      // Reserve the normal back-button width and each 48px action plus its gap.
+      final titleWidth = math.max(48.0, MediaQuery.sizeOf(context).width - MediaQuery.paddingOf(context).horizontal - 56 -
+          actions.length * (48 + (compactHeader ? 4 : 8)) - (compactHeader || small ? 24 : 36));
+      final painter = TextPainter(
+        text: TextSpan(text: title, style: titleStyle),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout(maxWidth: titleWidth);
+      toolbarHeight = math.max(56.0, painter.height + 16);
+      painter.dispose();
+    }
     return _KeyboardDismissOnBack(
       child: Scaffold(
         backgroundColor: scheme.background,
         appBar: AppBar(
-          toolbarHeight: compactHeader
-              ? math.max(56.0, MediaQuery.textScalerOf(context).scale(22) * 1.2 + 16)
-              : desktop ? 70 : small ? 68 : 76,
+          toolbarHeight: toolbarHeight,
           titleSpacing: compactHeader || small ? 12 : 18,
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -9345,9 +9380,9 @@ class PageScaffold extends StatelessWidget {
                   Flexible(
                     child: Text(
                       title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(fontSize: compactHeader ? 22 : desktop ? 26 : small ? 23 : 27),
+                      maxLines: wrapTitle ? null : 1,
+                      overflow: wrapTitle ? TextOverflow.visible : TextOverflow.ellipsis,
+                      style: titleStyle,
                     ),
                   ),
                   if (titleTrailing != null) ...[
@@ -10047,7 +10082,8 @@ Future<String?> showAppleWheelSelectionSheet(
                   onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel'))),
                 const SizedBox(width: 8),
                 Expanded(flex: 2, child: FilledButton(
-                  onPressed: safeIndex < 0 ? null : () => Navigator.pop(dialogContext, options[safeIndex].id),
+                  onPressed: safeIndex < 0 ? null : () => Navigator.pop(
+                    dialogContext, options[selectedIndex.clamp(0, options.length - 1).toInt()].id),
                   child: const Text('Done'))),
               ]),
             ],
@@ -12468,7 +12504,8 @@ class HomeDashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppController>();
+    context.select<AppController, Object>((state) => state.financeViewState);
+    final state = context.read<AppController>();
     final range = state.activeRange();
     final txs = state.filteredTransactions();
     final summary = state.summaryFor(txs);
@@ -12485,7 +12522,9 @@ class HomeDashboardScreen extends StatelessWidget {
         textScaler: MediaQuery.textScalerOf(context),
         maxLines: 1,
       )..layout();
-      return math.max(currentMax, painter.width);
+      final width = painter.width;
+      painter.dispose();
+      return math.max(currentMax, width);
     });
 
     final balanceCard = BalanceHeroCard(
@@ -13194,7 +13233,7 @@ class _AnimatedEmptyStateIconState extends State<_AnimatedEmptyStateIcon> with S
     );
 
     if (reduceMotion) return SizedBox(width: 80, height: 80, child: Center(child: iconBubble));
-    return SizedBox(
+    return RepaintBoundary(child: SizedBox(
       width: 80,
       height: 80,
       child: Stack(
@@ -13230,7 +13269,7 @@ class _AnimatedEmptyStateIconState extends State<_AnimatedEmptyStateIcon> with S
           ),
         ],
       ),
-    );
+    ));
   }
 }
 
@@ -13243,6 +13282,7 @@ class EmptyCard extends StatelessWidget {
     this.action,
     this.actionLabel,
     this.animated = false,
+    this.compact = false,
     this.iconColor,
   });
 
@@ -13252,18 +13292,46 @@ class EmptyCard extends StatelessWidget {
   final VoidCallback? action;
   final String? actionLabel;
   final bool animated;
+  final bool compact;
   final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
     final color = iconColor ?? kSleekAccent;
+    final iconWidget = animated
+        ? _AnimatedEmptyStateIcon(icon: icon, color: color)
+        : Icon(icon, size: 42, color: color);
+    if (compact) {
+      final theme = Theme.of(context);
+      return ExpressiveCard(
+        padding: const EdgeInsets.all(14), radius: 20, surfaceTint: false,
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SizedBox(width: 60, height: 60, child: FittedBox(child: iconWidget)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(body, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ])),
+          ]),
+          if (action != null) ...[
+            const SizedBox(height: 12),
+            Align(alignment: Alignment.centerRight, child: FilledButton(
+              style: FilledButton.styleFrom(minimumSize: const Size(48, 48),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                textStyle: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+              onPressed: action, child: Text(actionLabel ?? 'Add'),
+            )),
+          ],
+        ]),
+      );
+    }
     return ExpressiveCard(
       child: Column(
         children: [
-          if (animated)
-            _AnimatedEmptyStateIcon(icon: icon, color: color)
-          else
-            Icon(icon, size: 42, color: color),
+          iconWidget,
           const SizedBox(height: 12),
           Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
           const SizedBox(height: 6),
@@ -13345,13 +13413,16 @@ class AccountListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppController>();
+    context.select<AppController, Object>((state) => state.financeViewState);
+    final state = context.read<AppController>();
     final visibleAccounts = state.accounts.where(_matches).toList();
     final emptyTitle = filterType == AccountType.savings ? 'No savings accounts' : 'No accounts';
     final emptyBody = filterType == AccountType.savings
-        ? 'Create a savings account. Balance changes here do not create income, expense, or transaction history.'
+        ? 'Balance edits don’t affect income, expenses, or transaction history.'
         : 'Create your first account to start tracking money.';
     final empty = EmptyCard(
+      animated: filterType == AccountType.savings,
+      compact: filterType == AccountType.savings,
       icon: filterType == AccountType.savings ? Icons.savings_rounded : Icons.account_balance_wallet_rounded,
       title: emptyTitle,
       body: emptyBody,
@@ -13361,9 +13432,16 @@ class AccountListScreen extends StatelessWidget {
 
     return PageScaffold(
       title: title,
+      compactHeader: filterType == AccountType.savings,
+      wrapTitle: filterType == AccountType.savings,
       actions: [
-        IconButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AccountReorderScreen(filterType: filterType))), icon: const Icon(Icons.swap_vert_rounded)),
-        IconButton(onPressed: () => showAccountEditor(context, initialType: _initialType, allowedTypes: _allowedTypes), icon: const Icon(Icons.add_rounded)),
+        if (filterType != AccountType.savings || visibleAccounts.length > 1)
+          IconButton(tooltip: 'Reorder accounts',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AccountReorderScreen(filterType: filterType))),
+            icon: const Icon(Icons.swap_vert_rounded)),
+        IconButton(tooltip: filterType == AccountType.savings ? 'Add savings account' : 'Add account',
+          onPressed: () => showAccountEditor(context, initialType: _initialType, allowedTypes: _allowedTypes),
+          icon: const Icon(Icons.add_rounded)),
       ],
       child: filterType == AccountType.savings
           ? SavingsAccountsContent(accounts: visibleAccounts, empty: empty, allowedTypes: _allowedTypes)
@@ -17743,6 +17821,8 @@ class TransactionListScreen extends StatefulWidget {
 
 class _TransactionListScreenState extends State<TransactionListScreen> {
   final search = TextEditingController();
+  Object? _visibleSnapshot;
+  List<MoneyTransaction> _visibleTransactions = [];
   @override
   void dispose() {
     search.dispose();
@@ -17751,8 +17831,13 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppController>();
-    final visibleTransactions = state.transactionListTransactions();
+    final viewState = context.select<AppController, Object>((state) => state.financeViewState);
+    final state = context.read<AppController>();
+    if (_visibleSnapshot != viewState) {
+      _visibleSnapshot = viewState;
+      _visibleTransactions = state.transactionListTransactions();
+    }
+    final visibleTransactions = _visibleTransactions;
     final txs = visibleTransactions.where((tx) => transactionMatchesSearch(state, tx, search.text)).toList();
     final range = state.activeRange();
     final hasDateFilter = state.dateRangeType != DateRangeType.allTime;
@@ -17760,7 +17845,10 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
         state.filterCategoryIds.isNotEmpty ||
         state.filterTypes.isNotEmpty;
     final totalTransactionCount = state.transactions.length;
-    final matchingWithoutDateCount = state.transactionListTransactions(ignoreDate: true).length;
+    final matchingWithoutDateCount = txs.isEmpty && search.text.trim().isEmpty
+        ? state._matchingTransactions(ignoreDate: true)
+            .where((tx) => state.loanTransactionsVisibleInTransactionList || !tx.isLoanTransaction).length
+        : 0;
     final subtitle = hasDateFilter || hasTransactionFilters
         ? '${txs.length} shown • $totalTransactionCount total • ${range.label} • ${transactionSortModeLabel(state.transactionSortMode)}'
         : '$totalTransactionCount records • ${range.label} • ${transactionSortModeLabel(state.transactionSortMode)}';
@@ -19445,7 +19533,8 @@ class AnalysisScreen extends StatefulWidget {
 class _AnalysisScreenState extends State<AnalysisScreen> {
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppController>();
+    context.select<AppController, Object>((state) => state.financeViewState);
+    final state = context.read<AppController>();
     final range = state.activeRange();
     final txs = state.filteredTransactions();
     final summary = state.summaryFor(txs);
@@ -20616,7 +20705,8 @@ class _AnalysisTrendChartState extends State<AnalysisTrendChart> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppController>();
+    context.select<AppController, Object>((state) => state.financeViewState);
+    final state = context.read<AppController>();
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final incomeSpots = _spotsFor(true);
@@ -21069,7 +21159,8 @@ class ManageCategoriesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppController>();
+    context.select<AppController, Object>((state) => state.financeViewState);
+    final state = context.read<AppController>();
     final cats = state.categories.where((c) => c.type == type).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     final title = type == CategoryType.expense ? 'Expense categories' : 'Income categories';
@@ -21185,7 +21276,8 @@ class _CategoryBreakdownCardState extends State<CategoryBreakdownCard> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppController>();
+    context.select<AppController, Object>((state) => state.financeViewState);
+    final state = context.read<AppController>();
     final totals = state.categoryTotals(type);
     final entries = totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     final total = entries.fold<double>(0, (sum, e) => sum + e.value);
@@ -21799,7 +21891,8 @@ class CategoryTransactionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppController>();
+    context.select<AppController, Object>((state) => state.financeViewState);
+    final state = context.read<AppController>();
     final txs = state.transactionListTransactions(
       categoryId: category.id,
       ignoreDate: true,
@@ -21838,7 +21931,8 @@ class BudgetListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppController>();
+    context.select<AppController, Object>((state) => state.financeViewState);
+    final state = context.read<AppController>();
     final progress = state.budgetProgress();
     return PageScaffold(
       title: 'Budgets',
@@ -21876,7 +21970,8 @@ class BudgetProgressTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppController>();
+    context.select<AppController, Object>((state) => state.financeViewState);
+    final state = context.read<AppController>();
     final ratio = progress.ratio;
     final color = ratio >= 1 ? Colors.red : ratio >= .8 ? Colors.deepOrange : ratio >= .5 ? Colors.orange : Colors.green;
     return ExpressiveCard(
