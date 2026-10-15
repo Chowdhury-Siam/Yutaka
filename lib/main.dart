@@ -10008,132 +10008,83 @@ Future<String?> showAppleWheelSelectionSheet(
   final foundIndex = options.indexWhere((option) => option.id == selectedId);
   final initialIndex = options.isEmpty ? -1 : (foundIndex < 0 ? 0 : foundIndex);
   var selectedIndex = initialIndex;
-
-  const rowExtent = 72.0;
-  final listHeight = options.isEmpty
-      ? rowExtent
-      : math.min(288.0, math.max(rowExtent, options.length * rowExtent));
-  final maxScrollExtent = math.max(0.0, (options.length * rowExtent) - listHeight);
-  final initialOffset = options.isEmpty
-      ? 0.0
-      : math.min(
-          maxScrollExtent,
-          math.max(0.0, (initialIndex - 1) * rowExtent),
-        );
+  final repeatedCategoryType = options.isNotEmpty &&
+      CategoryType.values.any((type) => enumName(type) == options.first.subtitle) &&
+      options.every((option) => option.subtitle == options.first.subtitle);
+  final showSubtitles = !repeatedCategoryType;
+  final rowExtent = MediaQuery.textScalerOf(context).scale(14) > 18 ? 76.0 : 56.0;
+  final listHeight = math.min(360.0, math.max(56.0, options.length * rowExtent));
+  final initialOffset = math.min(
+    math.max(0.0, options.length * rowExtent - listHeight),
+    math.max(0.0, (initialIndex - 1) * rowExtent),
+  );
   final listController = ScrollController(initialScrollOffset: initialOffset);
   final hasAddAction = onAdd != null && addActionLabel != null && addActionLabel.trim().isNotEmpty;
 
   final result = await showYutakaPopup<String>(
     context,
-    maxWidth: 520,
-    maxHeight: math.min(680.0, (hasAddAction ? 250.0 : 184.0) + listHeight),
+    maxWidth: 480,
+    maxHeight: hasAddAction ? 600 : 540,
     child: StatefulBuilder(
       builder: (dialogContext, setModalState) {
-        final safeIndex = options.isEmpty
-            ? -1
-            : selectedIndex < 0
-                ? 0
-                : selectedIndex >= options.length
-                    ? options.length - 1
-                    : selectedIndex;
-        final dark = Theme.of(dialogContext).brightness == Brightness.dark;
-        final innerColor = dark ? kSleekSurfaceLow : kSleekLightBackground;
-        final innerBorderColor = dark ? kSleekOutlineVariant : kSleekLightOutlineVariant;
-        final handleColor = dark ? const Color(0xFF466057) : const Color(0xFFB7C9BF);
-
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-          child: Column(
+        final safeIndex = options.isEmpty ? -1 : selectedIndex.clamp(0, options.length - 1).toInt();
+        return CompactPopupContent(
+          title: title,
+          actions: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                width: 44,
-                height: 5,
-                decoration: BoxDecoration(color: handleColor, borderRadius: BorderRadius.circular(999)),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                height: listHeight,
-                decoration: BoxDecoration(
-                  color: innerColor,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: innerBorderColor),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: options.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Text(
-                            'Nothing here yet. Add one to continue.',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
-                                  color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                        ),
-                      )
-                    : Scrollbar(
-                        controller: listController,
-                        thumbVisibility: kIsDesktopApp && options.length > 4,
-                        child: ListView.builder(
-                          controller: listController,
-                          itemExtent: rowExtent,
-                          padding: EdgeInsets.zero,
-                          physics: optimizedScrollPhysics(dialogContext),
-                          itemCount: options.length,
-                          itemBuilder: (context, index) {
-                            final option = options[index];
-                            final isSelected = index == safeIndex;
-                            return Material(
-                              color: Colors.transparent,
-                              child: MotionInkWell(
-                                onTap: () => setModalState(() => selectedIndex = index),
-                                child: _AppleWheelOptionRow(option: option, selected: isSelected),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-              ),
               if (hasAddAction) ...[
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.pop(dialogContext, _selectionAddActionResult),
-                    icon: const Icon(Icons.add_rounded),
-                    label: Text(addActionLabel),
-                  ),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(dialogContext, _selectionAddActionResult),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: Text(addActionLabel),
                 ),
+                const SizedBox(height: 8),
               ],
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(dialogContext),
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: FilledButton(
-                      onPressed: safeIndex < 0 ? null : () => Navigator.pop(dialogContext, options[safeIndex].id),
-                      child: const Text('Done'),
-                    ),
-                  ),
-                ],
-              ),
+              Row(children: [
+                Expanded(child: OutlinedButton(
+                  onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel'))),
+                const SizedBox(width: 8),
+                Expanded(flex: 2, child: FilledButton(
+                  onPressed: safeIndex < 0 ? null : () => Navigator.pop(dialogContext, options[safeIndex].id),
+                  child: const Text('Done'))),
+              ]),
             ],
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: listHeight),
+            child: options.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Text('Nothing here yet. Add one to continue.',
+                      style: Theme.of(dialogContext).textTheme.bodyMedium),
+                  )
+                : Scrollbar(
+                    controller: listController,
+                    child: ListView.builder(
+                      controller: listController,
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      physics: optimizedScrollPhysics(dialogContext),
+                      itemCount: options.length,
+                      itemBuilder: (context, index) {
+                        final isSelected = index == safeIndex;
+                        return Semantics(
+                          selected: isSelected,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: MotionInkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () => setModalState(() => selectedIndex = index),
+                              child: _AppleWheelOptionRow(
+                                option: options[index], selected: isSelected, showSubtitle: showSubtitles),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
           ),
         );
       },
@@ -10141,67 +10092,52 @@ Future<String?> showAppleWheelSelectionSheet(
   );
 
   listController.dispose();
-  if (result == _selectionAddActionResult && onAdd != null) {
-    return onAdd();
-  }
+  if (result == _selectionAddActionResult && onAdd != null) return onAdd();
   return result;
 }
 
 class _AppleWheelOptionRow extends StatelessWidget {
-  const _AppleWheelOptionRow({required this.option, required this.selected});
+  const _AppleWheelOptionRow({required this.option, required this.selected, this.showSubtitle = true});
 
   final SelectionOption option;
   final bool selected;
+  final bool showSubtitle;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final titleStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w900,
-          color: selected ? scheme.onSurface : scheme.onSurface.withOpacity(.76),
-        );
-    final subtitleStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: selected ? kSleekMuted : kSleekMuted.withOpacity(.72),
-          fontWeight: FontWeight.w700,
-        );
-
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final color = colorFromHex(option.iconColor);
     return AnimatedContainer(
       duration: AppMotion.fast,
       curve: AppMotion.emphasized,
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      constraints: const BoxConstraints(minHeight: 52),
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: selected ? kSleekAccent.withOpacity(.10) : Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: selected ? kSleekAccent.withOpacity(.52) : Colors.transparent,
-          width: 1.1,
+        color: selected ? kSleekAccent.withOpacity(.12) : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: selected ? kSleekAccent.withOpacity(.5) : Colors.transparent),
+      ),
+      child: Row(children: [
+        Container(
+          width: 32, height: 32,
+          decoration: BoxDecoration(color: color.withOpacity(.12), borderRadius: BorderRadius.circular(10)),
+          child: Center(child: iconGlyph(context, option.iconName, color: color, size: 20)),
         ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          iconBubble(context, option.iconName, option.iconColor, size: 42),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(option.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle),
-                if (option.subtitle.trim().isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(option.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: subtitleStyle),
-                ],
-              ],
-            ),
-          ),
-          if (selected) ...[
-            const SizedBox(width: 10),
-            const Icon(Icons.check_rounded, color: kSleekAccent, size: 22),
+        const SizedBox(width: 10),
+        Expanded(child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(option.title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+            if (showSubtitle && option.subtitle.trim().isNotEmpty)
+              Text(option.subtitle, style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
           ],
-        ],
-      ),
+        )),
+        const SizedBox(width: 8),
+        SizedBox(width: 22, child: selected ? const Icon(Icons.check_circle_rounded, color: kSleekAccent, size: 20) : null),
+      ]),
     );
   }
 }
@@ -11797,6 +11733,60 @@ class YutakaPopupContent extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Compact choice dialogs keep their heading and actions outside the scrolling body.
+class CompactPopupContent extends StatelessWidget {
+  const CompactPopupContent({super.key, required this.title, required this.child, this.actions});
+  final String title;
+  final Widget child;
+  final Widget? actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final buttonStyle = ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll(Size(48, 48)),
+      padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+      shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+      textStyle: WidgetStatePropertyAll(theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700)),
+    );
+    return Theme(
+      data: theme.copyWith(
+        filledButtonTheme: FilledButtonThemeData(style: (theme.filledButtonTheme.style ?? const ButtonStyle()).merge(buttonStyle)),
+        outlinedButtonTheme: OutlinedButtonThemeData(style: (theme.outlinedButtonTheme.style ?? const ButtonStyle()).merge(buttonStyle)),
+        chipTheme: theme.chipTheme.copyWith(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+          labelStyle: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [
+              Expanded(child: Semantics(namesRoute: true, header: true, child: Text(title,
+                style: theme.textTheme.titleMedium?.copyWith(fontSize: 18, fontWeight: FontWeight.w700)))),
+              IconButton(
+                tooltip: 'Close',
+                style: IconButton.styleFrom(backgroundColor: Colors.transparent, minimumSize: const Size(48, 48)),
+                onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, size: 22)),
+            ]),
+            const SizedBox(height: 8),
+            Flexible(child: child),
+            if (actions != null) ...[
+              const SizedBox(height: 12),
+              actions!,
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -17671,7 +17661,7 @@ Future<void> showTransactionSortSheet(BuildContext context) async {
   await showYutakaPopup<void>(
     context,
     maxWidth: 520,
-    maxHeight: 660,
+    maxHeight: 540,
     child: const TransactionSortSheet(),
   );
 }
@@ -17682,32 +17672,24 @@ class TransactionSortSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppController>();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 18, 14, 14),
-      child: YutakaPopupContent(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Sort transactions',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 14),
-            for (final mode in TransactionSortMode.values) ...[
-              _TransactionSortOption(
-                mode: mode,
-                selected: state.transactionSortMode == mode,
-                onTap: () async {
-                  await state.setTransactionSortMode(mode);
-                  if (context.mounted) Navigator.pop(context);
-                },
-              ),
-              if (mode != TransactionSortMode.values.last) const SizedBox(height: 7),
-            ],
-          ],
-        ),
+    return CompactPopupContent(
+      title: 'Sort transactions',
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: TransactionSortMode.values.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 4),
+        itemBuilder: (context, index) {
+          final mode = TransactionSortMode.values[index];
+          return _TransactionSortOption(
+            mode: mode,
+            selected: state.transactionSortMode == mode,
+            onTap: () async {
+              await state.setTransactionSortMode(mode);
+              if (context.mounted) Navigator.pop(context);
+            },
+          );
+        },
       ),
     );
   }
@@ -17715,48 +17697,37 @@ class TransactionSortSheet extends StatelessWidget {
 
 class _TransactionSortOption extends StatelessWidget {
   const _TransactionSortOption({required this.mode, required this.selected, required this.onTap});
-
   final TransactionSortMode mode;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: selected ? kSleekAccent.withOpacity(.12) : scheme.surfaceContainerHighest.withOpacity(.24),
-      borderRadius: BorderRadius.circular(18),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
-            children: [
-              Icon(transactionSortModeIcon(mode), color: selected ? kSleekAccent : scheme.onSurfaceVariant),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(transactionSortModeLabel(mode), style: const TextStyle(fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 2),
-                    Text(
-                      transactionSortModeSubtitle(mode),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Icon(
-                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
-                color: selected ? kSleekAccent : scheme.outline,
-              ),
-            ],
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Semantics(
+      selected: selected,
+      child: Tooltip(
+        message: transactionSortModeSubtitle(mode),
+        child: Material(
+          color: selected ? kSleekAccent.withOpacity(.12) : scheme.surfaceContainerHighest.withOpacity(.24),
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(children: [
+                Icon(transactionSortModeIcon(mode), size: 20, color: selected ? kSleekAccent : scheme.onSurfaceVariant),
+                const SizedBox(width: 10),
+                Expanded(child: Text(transactionSortModeLabel(mode),
+                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: selected ? FontWeight.w700 : FontWeight.w600))),
+                const SizedBox(width: 8),
+                Icon(selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                  size: 20, color: selected ? kSleekAccent : scheme.outline),
+              ]),
+            ),
           ),
         ),
       ),
@@ -19371,7 +19342,7 @@ Future<void> showFilterSheet(BuildContext context) async {
   await showYutakaPopup<void>(
     context,
     maxWidth: 560,
-    maxHeight: 700,
+    maxHeight: 620,
     child: const FilterSheet(),
   );
 }
@@ -19397,31 +19368,64 @@ class _FilterSheetState extends State<FilterSheet> {
     types = List.of(state.filterTypes);
   }
 
+  Widget _group(BuildContext context, String title, int selected, List<Widget> chips) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(child: Text(title, style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700))),
+          Text(selected == 0 ? 'All' : '$selected selected', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ]),
+        const SizedBox(height: 4),
+        if (chips.isEmpty)
+          Text('None available', style: theme.textTheme.bodySmall)
+        else
+          Wrap(spacing: 6, runSpacing: 0, children: chips),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppController>();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 18, 14, 14),
-      child: YutakaPopupContent(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Filters', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
-            const SectionHeader('Accounts'),
-            Wrap(spacing: 8, runSpacing: 8, children: state.accounts.map((a) => FilterChip(label: Text(a.name), selected: accounts.contains(a.id), onSelected: (v) => setState(() => v ? accounts.add(a.id) : accounts.remove(a.id)))).toList()),
-            const SectionHeader('Categories'),
-            Wrap(spacing: 8, runSpacing: 8, children: state.categories.map((c) => FilterChip(label: Text(c.name), selected: categories.contains(c.id), onSelected: (v) => setState(() => v ? categories.add(c.id) : categories.remove(c.id)))).toList()),
-            const SectionHeader('Types'),
-            Wrap(spacing: 8, runSpacing: 8, children: MoneyTransactionType.values.map((t) => FilterChip(label: Text(enumName(t)), selected: types.contains(t), onSelected: (v) => setState(() => v ? types.add(t) : types.remove(t)))).toList()),
-            const SizedBox(height: 18),
-            Row(children: [
-              Expanded(child: OutlinedButton(onPressed: () async { await state.clearFilters(); if (context.mounted) Navigator.pop(context); }, child: const Text('Clear'))),
-              const SizedBox(width: 12),
-              Expanded(flex: 2, child: FilledButton(onPressed: () async { await state.saveFilters(accounts: accounts, categories: categories, types: types); if (context.mounted) Navigator.pop(context); }, child: const Text('Apply'))),
-            ]),
-          ],
-        ),
+    return CompactPopupContent(
+      title: 'Filters',
+      actions: Row(children: [
+        Expanded(child: OutlinedButton(onPressed: () async {
+          await state.clearFilters();
+          if (context.mounted) Navigator.pop(context);
+        }, child: const Text('Clear'))),
+        const SizedBox(width: 8),
+        Expanded(flex: 2, child: FilledButton(onPressed: () async {
+          await state.saveFilters(accounts: accounts, categories: categories, types: types);
+          if (context.mounted) Navigator.pop(context);
+        }, child: const Text('Apply'))),
+      ]),
+      child: SingleChildScrollView(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text('Unselected groups include all items.', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ),
+          _group(context, 'Accounts', accounts.length, state.accounts.map((a) => FilterChip(
+            label: Text(a.name), selected: accounts.contains(a.id),
+            onSelected: (v) => setState(() => v ? accounts.add(a.id) : accounts.remove(a.id)),
+          )).toList()),
+          _group(context, 'Categories', categories.length, state.categories.map((c) => FilterChip(
+            label: Text(c.name), selected: categories.contains(c.id),
+            onSelected: (v) => setState(() => v ? categories.add(c.id) : categories.remove(c.id)),
+          )).toList()),
+          _group(context, 'Types', types.length, MoneyTransactionType.values.map((t) => FilterChip(
+            label: Text(switch (t) {
+              MoneyTransactionType.income => 'Income',
+              MoneyTransactionType.expense => 'Expense',
+              MoneyTransactionType.transfer => 'Transfer',
+            }),
+            selected: types.contains(t),
+            onSelected: (v) => setState(() => v ? types.add(t) : types.remove(t)),
+          )).toList()),
+        ]),
       ),
     );
   }
@@ -22070,49 +22074,65 @@ class SettingsScreen extends StatelessWidget {
 }
 
 class SettingsTile extends StatelessWidget {
-  const SettingsTile({super.key, required this.icon, required this.title, this.subtitle, this.subtitleColor, required this.color, this.onTap});
+  const SettingsTile({super.key, required this.icon, required this.title, this.subtitle, this.subtitleColor, required this.color, this.onTap, this.trailing});
   final IconData icon;
   final String title;
   final String? subtitle;
   final String? subtitleColor;
   final String color;
   final VoidCallback? onTap;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final c = colorFromHex(color);
+    final theme = Theme.of(context);
     final hasSubtitle = subtitle != null && subtitle!.trim().isNotEmpty;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 8),
       child: MotionTouchFeedback(
         enabled: onTap != null,
         scale: .987,
         child: ExpressiveCard(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: hasSubtitle ? 12 : 14),
+          radius: 20,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           onTap: onTap,
-          child: ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: c.withOpacity(.16),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: c.withOpacity(.20)),
-            ),
-            child: Icon(icon, color: c),
-          ),
-          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-          subtitle: hasSubtitle
-              ? Text(
-                  subtitle!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: subtitleColor == null ? kSleekMuted : colorFromHex(subtitleColor!),
-                    fontWeight: FontWeight.w700,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: c.withOpacity(.16),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: c.withOpacity(.20)),
                   ),
-                )
-              : null,
-          trailing: Icon(Icons.chevron_right_rounded, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  child: Icon(icon, color: c, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+                      if (hasSubtitle)
+                        Text(
+                          subtitle!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: subtitleColor == null ? kSleekMuted : colorFromHex(subtitleColor!),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                trailing ?? Icon(Icons.chevron_right_rounded, color: theme.colorScheme.onSurfaceVariant),
+              ],
+            ),
           ),
         ),
       ),
