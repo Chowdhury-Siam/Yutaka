@@ -24,7 +24,7 @@ void main() {
       ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
   });
 
-  for (final variant in ['none', 'dark', 'light', 'phone']) {
+  for (final variant in ['none', 'simple', 'dark', 'light', 'phone']) {
     testWidgets('loan interest visual layout: $variant', (tester) async {
       final phone = variant == 'phone';
       final size = phone ? const Size(320, 568) : const Size(640, 800);
@@ -51,7 +51,8 @@ void main() {
             home: Builder(builder: (context) => Scaffold(
               body: Center(child: TextButton(
                 onPressed: () => showLoanInterestConfiguration(context,
-                  type: variant == 'none' ? LoanInterestType.none : LoanInterestType.compound,
+                  type: variant == 'none' ? LoanInterestType.none
+                      : variant == 'simple' ? LoanInterestType.simple : LoanInterestType.compound,
                   period: LoanInterestPeriod.monthly, rate: 12),
                 child: const Text('Open interest'),
               )),
@@ -61,6 +62,7 @@ void main() {
       ));
       await tester.tap(find.text('Open interest'));
       await tester.pumpAndSettle();
+      if (phone) await tester.ensureVisible(find.byType(TextFormField));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       final popup = tester.getRect(find.ancestor(of: find.text('Loan interest'), matching: find.byType(Column)).last);
