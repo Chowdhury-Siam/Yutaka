@@ -1,5 +1,6 @@
 ## 1.0.1322+366
 
+- Use native mouse input for all Windows installer GUI-test controls, avoiding synchronous styled-button mouse-message timeouts. Retain cancellation, path, shortcut, install, upgrade, preservation and launch checks; keep release versions unchanged for this test-only fix.
 - Correct the scroll regression test to wait for the list spring instead of waiting for repeating empty-state animations to stop. This test-only correction keeps the app and Worker versions unchanged.
 - Start the synthetic pull gesture before sending its measured movement, so touch-slop recognition cannot consume the entire pull. Keep the real overscroll and fixed-control position assertions.
 - Keep Transaction search, shortcuts, recently deleted, and record summary fixed below the app bar while the transaction list scrolls or overscrolls.
