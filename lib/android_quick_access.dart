@@ -74,7 +74,8 @@ class _DeviceLockSettingsTileState extends State<DeviceLockSettingsTile> {
       onTap: busy ? null : () => _toggle(!enabled),
       trailing: Semantics(
         label: 'Fingerprint / device lock',
-        child: Switch(value: enabled, onChanged: busy ? null : _toggle),
+        child: SizedBox(width: 52, height: 48,
+          child: Switch(value: enabled, onChanged: busy ? null : _toggle)),
       ),
     );
   }
@@ -92,11 +93,13 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
   bool bootstrapped = false;
   bool locked = true;
   bool authenticating = false;
+  bool automaticUnlockPending = true;
   bool foreground = true;
   String? pendingAction;
   String? message;
   Timer? refreshTimer;
   bool openingAction = false;
+  Object? widgetSnapshot;
 
   @override
   void initState() {
@@ -138,15 +141,33 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
 
   void _stateChanged() {
     final state = controller!;
+    final previousGate = (bootstrapped, locked);
     if (!state.loading && !bootstrapped) {
       bootstrapped = true;
       locked = _androidQuickAccessSupported && state.deviceLockEnabled;
     }
     if (!state.deviceLockEnabled && bootstrapped) { locked = false; }
-    if (mounted) { setState(() {}); }
-    refreshTimer?.cancel();
-    refreshTimer = Timer(const Duration(milliseconds: 180), () => refreshYutakaWidget(state));
+    if (mounted && previousGate != (bootstrapped, locked)) { setState(() {}); }
+    final snapshot = (state.loading, state.transactions, state.currencySymbol,
+      state.currencyPosition, state.deviceLockEnabled, state.useSeparators, state.amountsHidden);
+    if (widgetSnapshot != snapshot) {
+      widgetSnapshot = snapshot;
+      refreshTimer?.cancel();
+      refreshTimer = Timer(const Duration(milliseconds: 180), () => refreshYutakaWidget(state));
+    }
     _openPendingAction();
+    _promptAutomaticUnlock();
+  }
+
+  void _promptAutomaticUnlock() {
+    if (!_androidQuickAccessSupported || !automaticUnlockPending || !bootstrapped ||
+        !locked || !foreground || authenticating) { return; }
+    automaticUnlockPending = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) { return; }
+      if (!foreground) { automaticUnlockPending = true; return; }
+      if (locked && controller?.deviceLockEnabled == true) { _unlock(); }
+    });
   }
 
   void _openPendingAction() {
@@ -171,6 +192,7 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
 
   Future<void> _unlock() async {
     if (authenticating) { return; }
+    automaticUnlockPending = false;
     setState(() { authenticating = true; message = null; });
     final unlocked = await authenticateYutakaDevice();
     if (!mounted) { return; }
@@ -187,10 +209,15 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
     foreground = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
       if (controller?.deviceLockEnabled == true) {
+        // The native authentication UI also changes lifecycle state. Do not
+        // treat its return as a fresh request, especially after cancellation.
+        if (!authenticating) { automaticUnlockPending = true; }
         FocusManager.instance.primaryFocus?.unfocus();
         setState(() => locked = true);
       }
     } else if (state == AppLifecycleState.resumed) {
+      setState(() {});
+      _promptAutomaticUnlock();
       if (_androidQuickAccessSupported) { _loadPendingAction(); }
       _openPendingAction();
       if (controller != null) { refreshYutakaWidget(controller!); }
@@ -214,7 +241,14 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
       if (hidden) Material(color: Theme.of(context).scaffoldBackgroundColor,
         child: SafeArea(child: Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(
           mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.lock_rounded, size: 56, color: kSleekAccent),
+          Image.asset(
+            'assets/icons/yutaka_mark.png',
+            width: 72,
+            height: 80,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+            excludeFromSemantics: true,
+          ),
           const SizedBox(height: 20),
           Text(bootstrapped ? 'Yutaka is locked' : 'Yutaka', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 12),
