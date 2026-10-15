@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('every app TextField dismisses focus when the user taps outside it', () {
+  test('every app TextField and TextFormField dismisses focus on outside taps', () {
     final files = [
       File('lib/main.dart'),
       File('lib/loans/loan_sheets.dart'),
@@ -16,7 +16,7 @@ void main() {
     var dismissHandlers = 0;
     for (final file in files) {
       final source = file.readAsStringSync();
-      fields += RegExp(r'\bTextField\(').allMatches(source).length;
+      fields += RegExp(r'\bText(?:Form)?Field\(').allMatches(source).length;
       dismissHandlers += RegExp(r'onTapOutside:\s*\(_\)\s*=>\s*FocusManager\.instance\.primaryFocus\?\.unfocus\(\)').allMatches(source).length;
     }
 
