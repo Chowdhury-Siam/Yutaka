@@ -211,107 +211,158 @@ Future<LoanInterestConfiguration?> showLoanInterestConfiguration(
   required LoanInterestType type,
   required LoanInterestPeriod period,
   required double rate,
-}) async {
-  final rateController = TextEditingController(
-    text: rate > 0 ? (rate == rate.roundToDouble() ? rate.toStringAsFixed(0) : rate.toStringAsFixed(2)) : '',
-  );
+}) {
+  var workingRate = rate > 0 ? rate.toString().replaceFirst(RegExp(r'\.0$'), '') : '';
   var workingType = type;
-  var workingPeriod = period;
+  var workingPeriod = type == LoanInterestType.simple && period != LoanInterestPeriod.flat
+      ? LoanInterestPeriod.yearly : period;
+  final rateFieldKey = GlobalKey();
+  String? rateError;
 
-  try {
-    return await showYutakaPopup<LoanInterestConfiguration>(
-      context,
-      maxWidth: 470,
-      maxHeight: 590,
-      child: StatefulBuilder(
-        builder: (dialogContext, setModalState) {
-          final rateValue = double.tryParse(rateController.text.trim()) ?? 0;
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
-            child: YutakaPopupContent(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Interest',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 18),
-                  SleekPillSelector<LoanInterestType>(
-                    options: const [
-                      SleekPillOption(value: LoanInterestType.none, label: 'None'),
-                      SleekPillOption(value: LoanInterestType.simple, label: 'Simple'),
-                      SleekPillOption(value: LoanInterestType.compound, label: 'Compound'),
-                    ],
-                    selected: workingType,
-                    onChanged: (value) => setModalState(() {
-                      workingType = value;
-                      if (value == LoanInterestType.simple && workingPeriod != LoanInterestPeriod.flat) {
-                        workingPeriod = LoanInterestPeriod.yearly;
-                      }
-                    }),
-                  ),
-                  if (workingType != LoanInterestType.none) ...[
-                    const SizedBox(height: 16),
-                    TextField(
-                      contextMenuBuilder: yutakaTextFieldContextMenu,
-                      enableInteractiveSelection: true,
-                      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-                      controller: rateController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      onChanged: (_) => setModalState(() {}),
-                      decoration: InputDecoration(
-                        labelText: workingPeriod == LoanInterestPeriod.flat ? 'Fixed total interest' : 'Annual interest rate',
-                        suffixText: workingPeriod == LoanInterestPeriod.flat ? '% of principal' : '% APR',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SleekCyclePillSelector<LoanInterestPeriod>(
-                      options: workingType == LoanInterestType.simple
-                          ? const [
-                              SleekPillOption(value: LoanInterestPeriod.yearly, label: 'Accrue by day'),
-                              SleekPillOption(value: LoanInterestPeriod.flat, label: 'Fixed total'),
-                            ]
-                          : const [
-                              SleekPillOption(value: LoanInterestPeriod.yearly, label: 'Yearly compounding'),
-                              SleekPillOption(value: LoanInterestPeriod.monthly, label: 'Monthly compounding'),
-                              SleekPillOption(value: LoanInterestPeriod.daily, label: 'Daily compounding'),
-                              SleekPillOption(value: LoanInterestPeriod.flat, label: 'Fixed total interest'),
-                            ],
-                      selected: workingPeriod,
-                      onChanged: (value) => setModalState(() => workingPeriod = value),
-                    ),
-                  ],
-                  const SizedBox(height: 18),
-                  FilledButton(
-                    onPressed: () {
-                      if (!rateValue.isFinite || rateValue < 0 || rateValue > 1000) {
-                        showSnack(dialogContext, 'Enter a valid interest rate.');
-                        return;
-                      }
-                      Navigator.pop(
-                        dialogContext,
-                        LoanInterestConfiguration(
-                          type: workingType,
-                          period: workingPeriod,
-                          rate: workingType == LoanInterestType.none ? 0 : rateValue,
+  return showYutakaPopup<LoanInterestConfiguration>(
+    context,
+    maxWidth: 470,
+    maxHeight: 660,
+    child: StatefulBuilder(
+      builder: (dialogContext, setModalState) {
+        final theme = Theme.of(dialogContext);
+        final scheme = theme.colorScheme;
+        final accent = theme.brightness == Brightness.dark ? scheme.primary : scheme.onPrimaryContainer;
+        final flat = workingPeriod == LoanInterestPeriod.flat;
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(children: [
+                Expanded(child: Text('Loan interest', style: theme.textTheme.titleLarge)),
+                IconButton(
+                  tooltip: 'Close interest settings',
+                  onPressed: () => Navigator.pop(dialogContext),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ]),
+              const SizedBox(height: 4),
+              Text('How is interest charged?', style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+              const SizedBox(height: 16),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final option in const [
+                        (LoanInterestType.none, 'No interest', 'Only repay the loan amount.'),
+                        (LoanInterestType.simple, 'Simple interest', 'Interest on the original loan amount.'),
+                        (LoanInterestType.compound, 'Compound interest', 'Interest on the unpaid amount and interest.'),
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Material(
+                            color: workingType == option.$1
+                                ? scheme.primary.withValues(alpha: .12) : scheme.surfaceContainerHigh,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(color: workingType == option.$1
+                                  ? accent.withValues(alpha: .65) : scheme.outlineVariant.withValues(alpha: .4)),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: RadioListTile<LoanInterestType>(
+                              value: option.$1,
+                              groupValue: workingType,
+                              activeColor: accent,
+                              onChanged: (value) => setModalState(() {
+                                workingType = value!;
+                                rateError = null;
+                                if (value == LoanInterestType.simple && workingPeriod != LoanInterestPeriod.flat) {
+                                  workingPeriod = LoanInterestPeriod.yearly;
+                                }
+                              }),
+                              title: Text(option.$2, textAlign: TextAlign.start, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                              subtitle: Text(option.$3, textAlign: TextAlign.start, style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                            ),
+                          ),
                         ),
-                      );
-                    },
-                    child: const Text('Done'),
+                      if (workingType != LoanInterestType.none) ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<LoanInterestPeriod>(
+                          key: ValueKey((workingType, workingPeriod)),
+                          initialValue: workingPeriod,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: workingType == LoanInterestType.simple ? 'Interest calculation' : 'Compounding frequency',
+                            floatingLabelStyle: TextStyle(color: accent),
+                          ),
+                          items: [
+                            if (workingType == LoanInterestType.simple)
+                              const DropdownMenuItem(value: LoanInterestPeriod.yearly, child: Text('Daily, using a yearly rate'))
+                            else ...[
+                              const DropdownMenuItem(value: LoanInterestPeriod.yearly, child: Text('Yearly')),
+                              const DropdownMenuItem(value: LoanInterestPeriod.monthly, child: Text('Monthly')),
+                              const DropdownMenuItem(value: LoanInterestPeriod.daily, child: Text('Daily')),
+                            ],
+                            const DropdownMenuItem(value: LoanInterestPeriod.flat, child: Text('One-time total')),
+                          ],
+                          onChanged: (value) => setModalState(() => workingPeriod = value!),
+                        ),
+                        const SizedBox(height: 18),
+                        TextFormField(
+                          key: rateFieldKey,
+                          initialValue: workingRate,
+                          contextMenuBuilder: yutakaTextFieldContextMenu,
+                          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: (value) {
+                            workingRate = value;
+                            if (rateError != null) setModalState(() => rateError = null);
+                          },
+                          decoration: InputDecoration(
+                            labelText: flat ? 'One-time interest rate' : 'Yearly interest rate',
+                            floatingLabelStyle: TextStyle(color: accent),
+                            hintText: 'e.g. 10',
+                            suffixText: flat ? '% total' : '% / year',
+                            errorText: rateError,
+                            errorMaxLines: 2,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          flat ? 'Charged once as a percentage of the loan amount. It does not grow over time.'
+                              : workingType == LoanInterestType.simple
+                                  ? 'Calculated daily on the original amount, even after partial repayments.'
+                                  : 'Enter a yearly rate, even for monthly or daily compounding.',
+                          style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          );
-        },
-      ),
-    );
-  } finally {
-    rateController.dispose();
-  }
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () {
+                  final rateValue = double.tryParse(workingRate.trim());
+                  if (workingType != LoanInterestType.none &&
+                      (rateValue == null || !rateValue.isFinite || rateValue < 0 || rateValue > 1000)) {
+                    setModalState(() => rateError = 'Enter a number from 0 to 1,000.');
+                    Scrollable.ensureVisible(rateFieldKey.currentContext!, duration: AppMotion.fast, alignment: .5);
+                    return;
+                  }
+                  Navigator.pop(dialogContext, LoanInterestConfiguration(
+                    type: workingType,
+                    period: workingPeriod,
+                    rate: workingType == LoanInterestType.none ? 0 : rateValue!,
+                  ));
+                },
+                child: const Text('Save interest'),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
 }
 
 Future<void> showLoanEditorSheet(BuildContext context, {Loan? loan, LoanDirection defaultDirection = LoanDirection.lent, bool existingLoan = false}) async {
@@ -452,7 +503,7 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
     dueDate = loan?.dueDate;
     contactId = loan?.contactId;
     amount = TextEditingController(text: loan == null ? '' : loan.principal.toStringAsFixed(2));
-    rate = TextEditingController(text: loan == null || loan.interestRate == 0 ? '' : loan.interestRate.toStringAsFixed(2));
+    rate = TextEditingController(text: loan == null ? '' : loan.interestRate.toString().replaceFirst(RegExp(r'\.0$'), ''));
     note = TextEditingController(text: loan?.note ?? '');
     newPerson = TextEditingController();
   }
@@ -660,7 +711,7 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
             ),
           ),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
+          OutlinedButton(
             onPressed: () async {
               FocusManager.instance.primaryFocus?.unfocus();
               final selection = await showLoanInterestConfiguration(
@@ -673,15 +724,16 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
               setState(() {
                 interestType = selection.type;
                 interestPeriod = selection.period;
-                rate.text = selection.rate <= 0
-                    ? ''
-                    : (selection.rate == selection.rate.roundToDouble()
-                        ? selection.rate.toStringAsFixed(0)
-                        : selection.rate.toStringAsFixed(2));
+                rate.text = selection.rate.toString().replaceFirst(RegExp(r'\.0$'), '');
               });
             },
-            icon: const Icon(Icons.percent_rounded),
-            label: const Text('Interest'),
+            child: _ConfigurationButtonLabel(
+              icon: Icons.percent_rounded,
+              title: 'Interest',
+              summary: interestType == LoanInterestType.none ? 'No interest'
+                  : interestPeriod == LoanInterestPeriod.flat ? 'One-time · ${rate.text}% total'
+                  : '${interestType == LoanInterestType.simple ? 'Simple' : 'Compound'} · ${rate.text}% per year',
+            ),
           ),
           const SizedBox(height: 8),
           OutlinedButton(
