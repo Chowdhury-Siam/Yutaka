@@ -32,6 +32,18 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1315" date="2026-10-15">
+      <description><p>Compact split allocation dialogs and animate shortcut and recently deleted empty states.</p></description>
+    </release>
+    <release version="1.0.1314" date="2026-10-15">
+      <description><p>Compact date and category choices, filters, loan preferences, and sorting dialogs with consistent headings and accessible scrolling.</p></description>
+    </release>
+    <release version="1.0.1313" date="2026-10-15">
+      <description><p>Add the Yutaka logo silhouette for Android themed launcher icons.</p></description>
+    </release>
+    <release version="1.0.1312" date="2026-10-15">
+      <description><p>Compact settings cards and align the fingerprint lock control with the shared settings layout.</p></description>
+    </release>
     <release version="1.0.1311" date="2026-10-15">
       <description><p>Keep loan interest timing choices inside the dialog with rounded, wrapping controls that leave the rate and Save action visible.</p></description>
     </release>
