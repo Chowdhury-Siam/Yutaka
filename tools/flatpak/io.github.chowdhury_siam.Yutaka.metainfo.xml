@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1319" date="2026-10-15">
+      <description><p>Fix large-text picker footer layout and correct accessibility cleanup, cached-list contracts, and responsive savings layout tests.</p></description>
+    </release>
     <release version="1.0.1318" date="2026-10-15">
       <description><p>Reduce repeated finance UI, search, sort, and painting work while preserving visual effects; show authentication automatically with the Yutaka logo.</p></description>
     </release>
