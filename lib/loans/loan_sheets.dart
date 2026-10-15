@@ -286,25 +286,38 @@ Future<LoanInterestConfiguration?> showLoanInterestConfiguration(
                         ),
                       if (workingType != LoanInterestType.none) ...[
                         const SizedBox(height: 12),
-                        DropdownButtonFormField<LoanInterestPeriod>(
-                          key: ValueKey((workingType, workingPeriod)),
-                          initialValue: workingPeriod,
-                          isExpanded: true,
-                          decoration: InputDecoration(
-                            labelText: workingType == LoanInterestType.simple ? 'Interest calculation' : 'Compounding frequency',
-                            floatingLabelStyle: TextStyle(color: accent),
-                          ),
-                          items: [
-                            if (workingType == LoanInterestType.simple)
-                              const DropdownMenuItem(value: LoanInterestPeriod.yearly, child: Text('Daily, using a yearly rate'))
-                            else ...[
-                              const DropdownMenuItem(value: LoanInterestPeriod.yearly, child: Text('Yearly')),
-                              const DropdownMenuItem(value: LoanInterestPeriod.monthly, child: Text('Monthly')),
-                              const DropdownMenuItem(value: LoanInterestPeriod.daily, child: Text('Daily')),
-                            ],
-                            const DropdownMenuItem(value: LoanInterestPeriod.flat, child: Text('One-time total')),
+                        Text(workingType == LoanInterestType.simple ? 'Interest calculation' : 'Compounding frequency',
+                            style: theme.textTheme.labelLarge?.copyWith(color: scheme.onSurfaceVariant)),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final option in [
+                              if (workingType == LoanInterestType.simple)
+                                const SleekPillOption(value: LoanInterestPeriod.yearly, label: 'Daily accrual')
+                              else ...const [
+                                SleekPillOption(value: LoanInterestPeriod.yearly, label: 'Yearly'),
+                                SleekPillOption(value: LoanInterestPeriod.monthly, label: 'Monthly'),
+                                SleekPillOption(value: LoanInterestPeriod.daily, label: 'Daily'),
+                              ],
+                              const SleekPillOption(value: LoanInterestPeriod.flat, label: 'One-time total'),
+                            ])
+                              ChoiceChip(
+                                label: Text(option.label),
+                                selected: workingPeriod == option.value,
+                                onSelected: (_) => setModalState(() => workingPeriod = option.value),
+                                selectedColor: scheme.primary.withValues(alpha: .12),
+                                backgroundColor: scheme.surfaceContainerHigh,
+                                checkmarkColor: accent,
+                                labelStyle: theme.textTheme.labelLarge?.copyWith(
+                                    color: workingPeriod == option.value ? scheme.onSurface : scheme.onSurfaceVariant),
+                                side: BorderSide(color: workingPeriod == option.value
+                                    ? accent.withValues(alpha: .65) : scheme.outlineVariant.withValues(alpha: .4)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                              ),
                           ],
-                          onChanged: (value) => setModalState(() => workingPeriod = value!),
                         ),
                         const SizedBox(height: 18),
                         TextFormField(
