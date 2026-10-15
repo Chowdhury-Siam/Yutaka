@@ -90,9 +90,11 @@ unique install ID. It checks enabled controls at startup, both custom Close and
 Cancel buttons, native window closing, invalid and custom paths, Browse, desktop
 shortcut selection, deselection and saved upgrade choice, install, upgrade,
 data preservation, and Launch. Each click activates the window and moves the
-cursor into the visible control. Buttons receive bounded mouse move/press events;
-their release is posted so modal Browse and synchronous Install handlers do
-not block the test. It verifies whether the actual shortcut was created
+cursor into the visible control. Buttons and checkboxes receive a native
+`SendInput` mouse press/release pair, avoiding synchronous calls into styled
+mouse handlers. The test waits for each resulting dialog or status change so
+modal Browse and synchronous Install handlers do not block input injection.
+It verifies whether the actual shortcut was created
 after installation, rather than relying on `BM_CLICK` and `BM_GETCHECK` for a
 styled checkbox. It uninstalls only that fixture and never opens the real app or reads
 its data. Windows release CI runs this check before packaging the full app.
