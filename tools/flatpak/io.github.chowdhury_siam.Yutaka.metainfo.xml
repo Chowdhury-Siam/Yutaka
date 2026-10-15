@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1323" date="2026-10-15">
+      <description><p>Move account and category creation to the bottom of their choice pickers while retaining large-text accessibility.</p></description>
+    </release>
     <release version="1.0.1322" date="2026-10-15">
       <description><p>Keep transaction search and record summary fixed while preserving list scrolling and pull-down motion.</p></description>
     </release>
