@@ -158,29 +158,15 @@ class Windows:
         screen = W.POINT(x, y)
         assert self.api.ClientToScreen(handle, C.byref(screen)), C.get_last_error()
         assert self.api.SetCursorPos(screen.x, screen.y), C.get_last_error()
-        position = (y << 16) | x
-
-        if checkbox:
-            # Send actual system input so the native control/style hook sees
-            # mouse button state, capture and normal notifications. Successful
-            # delivery of hand-made WM_LBUTTON messages is not proof of a toggle.
-            events = (Input * 2)()
-            events[0].payload.mouse.dwFlags = 0x0002  # MOUSEEVENTF_LEFTDOWN
-            events[1].payload.mouse.dwFlags = 0x0004  # MOUSEEVENTF_LEFTUP
-            assert self.api.SendInput(2, events, C.sizeof(Input)) == 2, "Checkbox mouse input was not injected"
-            return
-
-        def send_mouse(message, buttons):
-            result = C.c_size_t()
-            sent = self.api.SendMessageTimeoutW(handle, message, buttons, position,
-                                               0x0002, 2000, C.byref(result))
-            assert sent, "Control did not process mouse message " + hex(message)
-
-        send_mouse(0x0200, 0)  # WM_MOUSEMOVE
-        send_mouse(0x0201, 1)  # WM_LBUTTONDOWN, MK_LBUTTON
-        # Release invokes OnClick. Browse and Install can run modal or
-        # synchronous work, so do not wait for their handler to return.
-        assert self.api.PostMessageW(handle, 0x0202, 0, position), C.get_last_error()
+        # Use the normal input queue for every styled control. Synchronous
+        # WM_MOUSEMOVE/WM_LBUTTONDOWN calls can time out in the style hook;
+        # real input also supplies button state, capture and notifications.
+        # The caller waits for the resulting dialog/status/state change, not
+        # for a modal or synchronous OnClick handler to return.
+        events = (Input * 2)()
+        events[0].payload.mouse.dwFlags = 0x0002  # MOUSEEVENTF_LEFTDOWN
+        events[1].payload.mouse.dwFlags = 0x0004  # MOUSEEVENTF_LEFTUP
+        assert self.api.SendInput(2, events, C.sizeof(Input)) == 2, "Mouse input was not injected"
 
     def set_text(self, handle, text):
         value = C.create_unicode_buffer(text)
