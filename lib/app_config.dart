@@ -33,7 +33,7 @@ const String kSleekAccentHex = '#00BD91';
 const String kLegacyStarterCashIconHex = '#78D8E8';
 
 const appTitle = 'Yutaka';
-const appVersion = String.fromEnvironment('YUTAKA_APP_VERSION', defaultValue: '1.0.1315');
+const appVersion = String.fromEnvironment('YUTAKA_APP_VERSION', defaultValue: '1.0.1318');
 const kWorkerDeploymentCompletedPreferenceKey = 'workerDeploymentCompleted';
 const kWorkerDeploymentReadmeUrl = 'https://github.com/Chowdhury-Siam/Yutaka/blob/main/README.md#self-hosted-sync';
 const kWorkerDeploymentVideoUrl = String.fromEnvironment('YUTAKA_DEPLOYMENT_VIDEO_URL');
