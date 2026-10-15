@@ -55,12 +55,22 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final dialogs = <String, Future<void> Function(BuildContext)>{
       'Choose Date Filter': (context) async {
-        await showAppleWheelSelectionSheet(context, title: 'Choose Date Filter',
+        await showAppleWheelSelectionSheet(context, title: 'Choose Date Filter', tileLayout: true,
           options: DateRangeType.values.map(optionFromDateRangeType).toList(), selectedId: 'allTime');
       },
       'Choose Category': (context) async {
         await showAppleWheelSelectionSheet(context, title: 'Choose Category', options: choices,
           selectedId: choices.first.id, addActionLabel: 'Add category', onAdd: () async => 'created');
+      },
+      'Choose Account': (context) async {
+        await showAppleWheelSelectionSheet(context, title: 'Choose Account',
+          options: controller.accounts.map((account) => optionFromAccount(account, controller)).toList(),
+          selectedId: 'cash', addActionLabel: 'Add account', onAdd: () async => 'created');
+      },
+      'Choose currency': (context) async {
+        await showCurrencyWheelPickerSheet(context,
+          countries: [['Bangladesh', '৳', 'BDT'], ['United States', r'$', 'USD']],
+          selectedCode: 'BDT', selectedSymbol: '৳');
       },
       'Filters': showFilterSheet,
       'Sort transactions': showTransactionSortSheet,
@@ -84,7 +94,7 @@ void main() {
         if (dialog.key == 'Choose Category') {
           // Creation scrolls with the choices; confirmation remains pinned.
           expect(find.text('Add category').hitTestable(), findsOneWidget);
-          final list = find.descendant(of: find.byType(CompactPopupContent), matching: find.byType(Scrollable));
+          final list = find.descendant(of: find.byKey(const ValueKey('choice-options-list')), matching: find.byType(Scrollable));
           await tester.scrollUntilVisible(find.text('Category 29'), 180, scrollable: list);
           expect(find.text('Done').hitTestable(), findsOneWidget);
           expect(find.text('Cancel').hitTestable(), findsOneWidget);
@@ -101,10 +111,14 @@ void main() {
   testWidgets('date choice remains a draft until Done and category creation remains available', (tester) async {
     String? result;
     Future<void> openDate(BuildContext context) async {
-      result = await showAppleWheelSelectionSheet(context, title: 'Choose Date Filter',
+      result = await showAppleWheelSelectionSheet(context, title: 'Choose Date Filter', tileLayout: true,
         options: DateRangeType.values.map(optionFromDateRangeType).toList(), selectedId: 'allTime');
     }
     await host(tester, openDate);
+    expect(tester.getTopLeft(find.text('This Week')).dx,
+      greaterThan(tester.getTopLeft(find.text('Today')).dx));
+    expect(tester.getTopLeft(find.text('This Month')).dy,
+      greaterThan(tester.getTopLeft(find.text('Today')).dy));
     for (final type in DateRangeType.values) {
       expect(find.text(optionFromDateRangeType(type).title).hitTestable(), findsOneWidget);
     }
@@ -139,6 +153,29 @@ void main() {
     await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
     expect(controller.filterAccountIds, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('currency search preserves stable choices and confirms the latest tap', (tester) async {
+    List<String>? result;
+    await host(tester, (context) async {
+      result = await showCurrencyWheelPickerSheet(context,
+        countries: [['Bangladesh', '৳', 'BDT'], ['United States', r'$', 'USD'], ['Japan', '¥', 'JPY']],
+        selectedCode: 'BDT', selectedSymbol: '৳');
+    });
+    final search = find.byKey(const ValueKey('choice-search'));
+    await tester.enterText(search, 'no such currency');
+    await tester.pump();
+    expect(find.text('No matches found'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Done')).onPressed, isNull);
+    await tester.enterText(search, 'USD');
+    await tester.pump();
+    await tester.tap(find.text('United States'));
+    // Confirm without another rebuild to cover the selection race.
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(result, ['United States', r'$', 'USD']);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }
