@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1325" date="2026-10-15">
+      <description><p>Unify transaction, loan, subscription and Plan date/time controls with aligned compact buttons and clear date/time summaries.</p></description>
+    </release>
     <release version="1.0.1324" date="2026-10-15">
       <description><p>Keep Time and Date beside Service charge throughout the shared transaction editor.</p></description>
     </release>
