@@ -1,3 +1,30 @@
+## 1.0.1315+359
+
+- Enable the existing animated empty-state icons on Saved shortcuts and Recently deleted, including the reduced-motion fallback.
+- Compact account/category splits with colored icon rows, separate amount fields, a shorter fee explanation, pinned allocation status, a progress bar, and wrapping footer actions.
+- Keep incomplete allocation neutral, highlight over-allocation, and mark balanced splits clearly. Retain positive finite amounts, 2–20 shares, matching-total validation, and Cancel/Clear behavior.
+- Add split status/validation and empty-state motion checks, and extend short-screen large-text dialog coverage. Keep prior UI/icon fixes and Worker version 1.0.1305 unchanged.
+
+## 1.0.1314+358
+
+- Compact the date/category pickers, filters, loan preferences, and transaction sort popup with consistent headings, close controls, tighter spacing, and smaller icon tiles.
+- Keep headings and footer actions outside scrollable choices instead of shrinking long filter and sort content. Allow large text and long labels to wrap.
+- Show all six date ranges at standard text size, remove repeated category-type captions, tighten filter chips with selection counts, and shorten loan preference descriptions.
+- Retain selection confirmation, inline category/account creation, filter drafts and Clear/Apply, immediate sort selection, and all five loan preference setters.
+- Add compact dialog layout and selection regressions. Keep the earlier settings and themed launcher icon fixes, and Worker version 1.0.1305.
+
+## 1.0.1313+357
+
+- Add a transparent monochrome Yutaka mark to both Android adaptive launcher icons so supported themed launchers can show the logo instead of generating a generic silhouette.
+- Match the existing color foreground padding and preserve the original color, legacy, splash, and notification icons.
+- Cover themed icon resource wiring and brand silhouette in the Android resource checks. Keep Worker version 1.0.1305 unchanged.
+
+## 1.0.1312+356
+
+- Give Fingerprint / device lock the same card, icon tile, and alignment as the other settings, with a concise privacy description and a trailing switch.
+- Compact shared settings cards with smaller icons, tighter padding, and lighter typography while allowing text to wrap at larger sizes.
+- Preserve device authentication, busy-state protection, and hidden widget amounts. Keep Worker version 1.0.1305 unchanged.
+
 ## 1.0.1311+355
 
 - Replace floating loan interest timing menus with rounded choices inside the dialog, keeping the rate field and Save action unobscured.
