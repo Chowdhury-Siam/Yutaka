@@ -1,3 +1,29 @@
+## 1.0.1318+362
+
+- Avoid finance-page rebuilds on unrelated sync/update progress; reuse transaction sorting while typing and skip search formatting for blank queries.
+- Filter and sort transaction history once, count unfiltered matches only for empty states, and reuse loan interest/contact calculations within a screen build.
+- Isolate animated empty-state icons and page painting, dispose temporary text-measurement resources, and refresh the launcher widget only when relevant state changes.
+- Preserve all features, animation assets/timings, blur, shadows, and financial persistence; add search/sort and rebuild-count regressions.
+- Automatically request fingerprint or device authentication when a locked app starts and when it returns to the foreground.
+- Keep a single native prompt active, leave cancellation available for manual retry, and refresh the gate after native authentication resumes the app.
+- Replace the locked-screen padlock with the existing Yutaka brand mark.
+- Add startup, resume, cancellation, native lifecycle, and branding regressions. Keep the Worker version at 1.0.1305.
+
+## 1.0.1317+361
+
+- Use Flutter’s native percentage semantics for split progress, avoiding invalid currency text in numeric progress accessibility values.
+- Scroll the split allocation explanation together with the fields so it cannot overflow the remaining body space on a short, large-text screen.
+- Confirm the current picker selection even when Done is pressed before the next rebuild.
+- Bound the device-lock switch to a compact 52-by-48 touch target. Allow card text to wrap without a fixed total-height assertion.
+- Exercise split accessibility semantics explicitly and label large-text layout failures by dialog. Keep prior UI fixes, saved data, and Worker version 1.0.1305 unchanged.
+
+## 1.0.1316+360
+
+- Keep the full Savings Accounts title readable with a compact toolbar that grows for wrapped text. Show reordering when there are at least two savings accounts, and label the toolbar actions.
+- Compact the savings empty state into a small icon-and-text row, shorten the explanation, and use a smaller action button with a full touch target.
+- Enable the existing pig animation and retain its reduced-motion fallback. Add narrow-screen, large-text, card-size, and motion regressions.
+- Retain previous UI and launcher icon fixes. Keep account behavior, saved data, and Worker version 1.0.1305 unchanged.
+
 ## 1.0.1315+359
 
 - Enable the existing animated empty-state icons on Saved shortcuts and Recently deleted, including the reduced-motion fallback.
