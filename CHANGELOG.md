@@ -1,3 +1,9 @@
+## 1.0.1311+355
+
+- Replace floating loan interest timing menus with rounded choices inside the dialog, keeping the rate field and Save action unobscured.
+- Wrap timing choices on narrow screens and preserve yearly, monthly, daily, and one-time calculation settings.
+- Cover choice bounds, selection, saving, and large-text phone layouts. Update app release metadata; keep Worker version 1.0.1305 unchanged.
+
 ## 1.0.1310+354
 
 - Fix the release checks to count both TextField and TextFormField, including outside-tap dismissal and adaptive text selection.
