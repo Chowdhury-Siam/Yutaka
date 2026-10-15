@@ -9498,6 +9498,7 @@ class ResponsiveListContent extends StatelessWidget {
     required this.itemCount,
     required this.itemBuilder,
     this.header = const [],
+    this.fixedHeader = const [],
     this.empty,
     this.padding,
     this.mobileMaxWidth = 720,
@@ -9508,6 +9509,7 @@ class ResponsiveListContent extends StatelessWidget {
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
   final List<Widget> header;
+  final List<Widget> fixedHeader;
   final Widget? empty;
   final EdgeInsets? padding;
   final double mobileMaxWidth;
@@ -9541,23 +9543,37 @@ class ResponsiveListContent extends StatelessWidget {
             child: SlidableAutoCloseBehavior(
               closeWhenOpened: true,
               closeWhenTapped: true,
-              child: ListView.builder(
-                padding: resolvedPadding,
-                physics: optimizedScrollPhysics(context),
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                cacheExtent: kIsDesktopApp ? 620 : 420,
-                addAutomaticKeepAlives: false,
-                addSemanticIndexes: false,
-                itemCount: header.length + bodyCount,
-                itemBuilder: (context, index) {
-                  if (index < header.length) return header[index];
-                  final bodyIndex = index - header.length;
-                  if (itemCount == 0) return empty!;
-                  return Padding(
-                    padding: EdgeInsets.only(bottom: itemSpacing),
-                    child: itemBuilder(context, bodyIndex),
-                  );
-                },
+              child: Column(
+                children: [
+                  if (fixedHeader.isNotEmpty)
+                    Padding(
+                      padding: resolvedPadding.copyWith(bottom: 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: fixedHeader,
+                      ),
+                    ),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: fixedHeader.isEmpty ? resolvedPadding : resolvedPadding.copyWith(top: 0),
+                      physics: optimizedScrollPhysics(context),
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                      cacheExtent: kIsDesktopApp ? 620 : 420,
+                      addAutomaticKeepAlives: false,
+                      addSemanticIndexes: false,
+                      itemCount: header.length + bodyCount,
+                      itemBuilder: (context, index) {
+                        if (index < header.length) return header[index];
+                        final bodyIndex = index - header.length;
+                        if (itemCount == 0) return empty!;
+                        return Padding(
+                          padding: EdgeInsets.only(bottom: itemSpacing),
+                          child: itemBuilder(context, bodyIndex),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -9901,6 +9917,7 @@ class SelectionOption {
     required this.subtitle,
     required this.iconName,
     required this.iconColor,
+    this.symbol,
   });
 
   final String id;
@@ -9908,6 +9925,7 @@ class SelectionOption {
   final String subtitle;
   final String iconName;
   final String iconColor;
+  final String? symbol;
 }
 
 SelectionOption optionFromAccount(Account account, AppController state) => SelectionOption(
@@ -10038,93 +10056,133 @@ Future<String?> showAppleWheelSelectionSheet(
   required String? selectedId,
   String? addActionLabel,
   Future<String?> Function()? onAdd,
+  bool tileLayout = false,
+  String? searchHint,
 }) async {
   if (options.isEmpty && onAdd == null) return null;
   final foundIndex = options.indexWhere((option) => option.id == selectedId);
   final initialIndex = options.isEmpty ? -1 : (foundIndex < 0 ? 0 : foundIndex);
   var selectedIndex = initialIndex;
+  // Show the current choice first on opening without moving rows after taps.
+  final orderedOptions = !tileLayout && initialIndex >= 0
+      ? [options[initialIndex], ...options.where((option) => option.id != options[initialIndex].id)] : options;
+  var search = '';
   final repeatedCategoryType = options.isNotEmpty &&
       CategoryType.values.any((type) => enumName(type) == options.first.subtitle) &&
       options.every((option) => option.subtitle == options.first.subtitle);
-  final showSubtitles = !repeatedCategoryType;
   final hasAddAction = onAdd != null && addActionLabel != null && addActionLabel.trim().isNotEmpty;
-  final rowExtent = MediaQuery.textScalerOf(context).scale(14) > 18 ? 76.0 : 56.0;
-  final listHeight = math.min(360.0, math.max(56.0, (options.length + (hasAddAction ? 1 : 0)) * rowExtent));
-  final initialOffset = math.min(
-    math.max(0.0, options.length * rowExtent - listHeight),
-    math.max(0.0, (initialIndex - 1) * rowExtent),
-  );
-  final listController = ScrollController(initialScrollOffset: initialOffset);
+  final listController = ScrollController();
 
   final result = await showYutakaPopup<String>(
     context,
     maxWidth: 480,
-    maxHeight: hasAddAction ? 600 : 540,
-    child: StatefulBuilder(
-      builder: (dialogContext, setModalState) {
-        final safeIndex = options.isEmpty ? -1 : selectedIndex.clamp(0, options.length - 1).toInt();
-        return CompactPopupContent(
-          title: title,
-          actions: Row(children: [
-            Expanded(child: OutlinedButton(
-              onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel'))),
+    maxHeight: 560,
+    child: StatefulBuilder(builder: (dialogContext, setModalState) {
+      final theme = Theme.of(dialogContext);
+      final largeText = MediaQuery.textScalerOf(dialogContext).scale(14) > 18;
+      final query = search.trim().toLowerCase();
+      final visible = orderedOptions.where((option) => query.isEmpty ||
+        '${option.title} ${option.subtitle} ${option.symbol ?? ''}'.toLowerCase().contains(query)).toList();
+      final safeIndex = options.isEmpty ? -1 : selectedIndex.clamp(0, options.length - 1).toInt();
+      final headerIcon = tileLayout ? Icons.date_range_rounded
+          : options.any((option) => option.symbol != null) ? Icons.currency_exchange_rounded
+          : title.contains('Account') ? Icons.account_balance_wallet_rounded
+          : title.contains('Category') ? Icons.category_rounded : Icons.tune_rounded;
+
+      Widget choice(SelectionOption option, {bool tile = false}) => Semantics(
+        selected: safeIndex >= 0 && options[safeIndex].id == option.id,
+        child: Material(color: Colors.transparent, child: MotionInkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => setModalState(() => selectedIndex = options.indexOf(option)),
+          child: _SelectionOptionCard(option: option,
+            selected: safeIndex >= 0 && options[safeIndex].id == option.id,
+            showSubtitle: !repeatedCategoryType, tile: tile),
+        )),
+      );
+
+      return CompactPopupContent(
+        title: title,
+        titleLeading: largeText ? null : Container(
+          width: 34, height: 34,
+          decoration: BoxDecoration(color: kSleekAccent.withOpacity(.14),
+            borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(8),
+              bottomLeft: Radius.circular(8), bottomRight: Radius.circular(14))),
+          child: Icon(headerIcon, size: 19, color: kSleekAccent),
+        ),
+        actions: Column(mainAxisSize: MainAxisSize.min, children: [
+          Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(.4)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel'))),
             const SizedBox(width: 8),
-            Expanded(child: FilledButton(
-              onPressed: safeIndex < 0 ? null : () => Navigator.pop(
-                dialogContext, options[selectedIndex.clamp(0, options.length - 1).toInt()].id),
-              child: const Text('Done'))),
+            Expanded(child: MotionTouchFeedback(child: FilledButton(
+              onPressed: safeIndex < 0 || visible.isEmpty ? null : () => Navigator.pop(dialogContext,
+                options[selectedIndex.clamp(0, options.length - 1).toInt()].id),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Flexible(child: Text('Done')),
+                if (!largeText) ...[const SizedBox(width: 8), const Icon(Icons.arrow_forward_rounded, size: 18)],
+              ]),
+            ))),
           ]),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: listHeight),
-            child: Scrollbar(
-              controller: listController,
-              child: ListView.builder(
-                controller: listController,
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                physics: optimizedScrollPhysics(dialogContext),
-                itemCount: options.length + (hasAddAction ? 1 : 0) + (options.isEmpty ? 1 : 0),
-                itemBuilder: (context, index) {
-                  // Secondary creation stays reachable without consuming
-                  // the pinned footer's height at large text sizes.
-                  if (hasAddAction && index == 0) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: OutlinedButton.icon(
-                        onPressed: () => Navigator.pop(dialogContext, _selectionAddActionResult),
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: Text(addActionLabel),
-                      ),
-                    );
-                  }
-                  if (options.isEmpty) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                      child: Text('Nothing here yet. Add one to continue.',
-                        style: Theme.of(dialogContext).textTheme.bodyMedium),
-                    );
-                  }
-                  final optionIndex = index - (hasAddAction ? 1 : 0);
-                  final isSelected = optionIndex == safeIndex;
-                  return Semantics(
-                    selected: isSelected,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: MotionInkWell(
-                        borderRadius: BorderRadius.circular(14),
-                        onTap: () => setModalState(() => selectedIndex = optionIndex),
-                        child: _AppleWheelOptionRow(
-                          option: options[optionIndex], selected: isSelected, showSubtitle: showSubtitles),
-                      ),
-                    ),
-                  );
-                },
-              ),
+        ]),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          if (searchHint != null) ...[
+            TextField(
+              key: const ValueKey('choice-search'),
+              contextMenuBuilder: yutakaTextFieldContextMenu, enableInteractiveSelection: true,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              decoration: InputDecoration(hintText: searchHint, prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                isDense: true, filled: true, fillColor: theme.colorScheme.surfaceContainerHighest.withOpacity(.35),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
+              onChanged: (value) {
+                setModalState(() => search = value);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (listController.hasClients) listController.jumpTo(0);
+                });
+              },
             ),
-          ),
-        );
-      },
-    ),
+            const SizedBox(height: 10),
+          ],
+          Flexible(child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: tileLayout && !largeText ? 320 : 344),
+            child: LayoutBuilder(builder: (context, constraints) {
+              final useTiles = tileLayout && !largeText && constraints.maxWidth >= 260;
+              final prefixCount = hasAddAction ? 1 : 0;
+              final rows = useTiles ? (visible.length / 2).ceil() : visible.length;
+              return Scrollbar(controller: listController, child: ListView.builder(
+                key: const ValueKey('choice-options-list'),
+                controller: listController, shrinkWrap: true, padding: EdgeInsets.zero,
+                physics: optimizedScrollPhysics(dialogContext),
+                itemCount: prefixCount + (visible.isEmpty ? 1 : rows),
+                itemBuilder: (context, index) {
+                  if (hasAddAction && index == 0) {
+                    return Padding(padding: const EdgeInsets.only(bottom: 8), child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(dialogContext, _selectionAddActionResult),
+                      icon: const Icon(Icons.add_rounded, size: 18), label: Text(addActionLabel),
+                    ));
+                  }
+                  if (visible.isEmpty) {
+                    return Padding(padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+                      child: Text(query.isNotEmpty ? 'No matches found' : 'Nothing here yet. Add one to continue.',
+                        style: theme.textTheme.bodyMedium));
+                  }
+                  final row = index - prefixCount;
+                  if (!useTiles) return Padding(padding: const EdgeInsets.only(bottom: 6), child: choice(visible[row]));
+                  return Padding(padding: const EdgeInsets.only(bottom: 8), child: IntrinsicHeight(child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: choice(visible[row * 2], tile: true)),
+                      const SizedBox(width: 8),
+                      Expanded(child: row * 2 + 1 < visible.length ? choice(visible[row * 2 + 1], tile: true) : const SizedBox.shrink()),
+                    ],
+                  )));
+                },
+              ));
+            }),
+          )),
+        ]),
+      );
+    }),
   );
 
   listController.dispose();
@@ -10132,52 +10190,58 @@ Future<String?> showAppleWheelSelectionSheet(
   return result;
 }
 
-class _AppleWheelOptionRow extends StatelessWidget {
-  const _AppleWheelOptionRow({required this.option, required this.selected, this.showSubtitle = true});
-
+class _SelectionOptionCard extends StatelessWidget {
+  const _SelectionOptionCard({required this.option, required this.selected, this.showSubtitle = true, this.tile = false});
   final SelectionOption option;
   final bool selected;
   final bool showSubtitle;
+  final bool tile;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final color = colorFromHex(option.iconColor);
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final leading = option.symbol != null
+        ? _CurrencySymbolBubble(symbol: option.symbol!, selected: selected)
+        : AnimatedContainer(
+            duration: reduceMotion ? Duration.zero : AppMotion.fast,
+            width: tile ? 30 : 38, height: tile ? 30 : 38,
+            decoration: BoxDecoration(color: color.withOpacity(selected ? .22 : .12),
+              borderRadius: BorderRadius.circular(selected ? 13 : 10)),
+            child: Center(child: iconGlyph(context, option.iconName, color: color, size: tile ? 20 : 22)),
+          );
+    final check = AnimatedSwitcher(
+      duration: reduceMotion ? Duration.zero : AppMotion.fast,
+      transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
+      child: Icon(selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+        key: ValueKey(selected), size: 19, color: selected ? kSleekAccent : theme.colorScheme.outlineVariant),
+    );
+    final label = Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(option.title, style: theme.textTheme.bodyMedium?.copyWith(fontSize: 14, height: 1.2, fontWeight: FontWeight.w700)),
+      if (showSubtitle && option.subtitle.trim().isNotEmpty) ...[
+        const SizedBox(height: 3),
+        Text(option.subtitle, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      ],
+    ]);
     return AnimatedContainer(
-      duration: AppMotion.fast,
-      curve: AppMotion.emphasized,
-      constraints: const BoxConstraints(minHeight: 52),
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      duration: reduceMotion ? Duration.zero : AppMotion.fast, curve: AppMotion.emphasized,
+      constraints: const BoxConstraints(minHeight: 58),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: selected ? kSleekAccent.withOpacity(.12) : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: selected ? kSleekAccent.withOpacity(.5) : Colors.transparent),
+        color: selected ? kSleekAccent.withOpacity(.13) : theme.colorScheme.surfaceContainerHighest.withOpacity(.25),
+        borderRadius: BorderRadius.only(topLeft: Radius.circular(selected ? 24 : 18), topRight: const Radius.circular(12),
+          bottomLeft: const Radius.circular(12), bottomRight: Radius.circular(selected ? 24 : 18)),
+        border: Border.all(color: selected ? kSleekAccent.withOpacity(.65) : theme.colorScheme.outlineVariant.withOpacity(.3)),
       ),
-      child: Row(children: [
-        Container(
-          width: 32, height: 32,
-          decoration: BoxDecoration(color: color.withOpacity(.12), borderRadius: BorderRadius.circular(10)),
-          child: Center(child: iconGlyph(context, option.iconName, color: color, size: 20)),
-        ),
-        const SizedBox(width: 10),
-        Expanded(child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(option.title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
-            if (showSubtitle && option.subtitle.trim().isNotEmpty)
-              Text(option.subtitle, style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-          ],
-        )),
-        const SizedBox(width: 8),
-        SizedBox(width: 22, child: selected ? const Icon(Icons.check_circle_rounded, color: kSleekAccent, size: 20) : null),
-      ]),
+      child: tile
+          ? Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [leading, const Spacer(), check]), const SizedBox(height: 10), label,
+            ])
+          : Row(children: [leading, const SizedBox(width: 12), Expanded(child: label), const SizedBox(width: 8), check]),
     );
   }
 }
-
 
 Future<DateTime?> pickDate(BuildContext context, DateTime initial) => showDatePicker(
       context: context,
@@ -11775,10 +11839,11 @@ class YutakaPopupContent extends StatelessWidget {
 
 /// Compact choice dialogs keep their heading and actions outside the scrolling body.
 class CompactPopupContent extends StatelessWidget {
-  const CompactPopupContent({super.key, required this.title, required this.child, this.actions});
+  const CompactPopupContent({super.key, required this.title, required this.child, this.actions, this.titleLeading});
   final String title;
   final Widget child;
   final Widget? actions;
+  final Widget? titleLeading;
 
   @override
   Widget build(BuildContext context) {
@@ -11807,6 +11872,7 @@ class CompactPopupContent extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(children: [
+              if (titleLeading != null) ...[titleLeading!, const SizedBox(width: 10)],
               Expanded(child: Semantics(namesRoute: true, header: true, child: Text(title,
                 style: theme.textTheme.titleMedium?.copyWith(fontSize: 18, height: 1.2, fontWeight: FontWeight.w700)))),
               IconButton(
@@ -17894,7 +17960,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
           ),
       ],
       child: ResponsiveListContent(
-        header: [
+        fixedHeader: [
           Row(children: [
             Expanded(child: TextField(key: const ValueKey('transaction-search'), controller: search,
               contextMenuBuilder: yutakaTextFieldContextMenu,
@@ -17929,8 +17995,8 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
               ),
             )),
           ),
-          ActiveFilterChips(state: state),
         ],
+        header: [ActiveFilterChips(state: state)],
         itemCount: txs.length,
         empty: search.text.trim().isNotEmpty
             ? EmptyCard(icon: Icons.search_off_rounded, title: 'No search matches',
@@ -19350,6 +19416,7 @@ Future<void> showDateRangeSheet(BuildContext context) async {
   final selectedId = await showAppleWheelSelectionSheet(
     context,
     title: 'Choose Date Filter',
+    tileLayout: true,
     selectedId: enumName(state.dateRangeType),
     options: DateRangeType.values.map(optionFromDateRangeType).toList(),
   );
@@ -22152,10 +22219,7 @@ class SettingsScreen extends StatelessWidget {
               const BatteryOptimizationSettingsTile(),
             ],
             const SectionHeader('App'),
-            if (Platform.isAndroid) ...[
-              const DeviceLockSettingsTile(),
-              SettingsTile(icon: Icons.widgets_rounded, title: 'Home-screen widget', subtitle: 'Today’s spending and Add expense', color: kSleekAccentHex, onTap: () => pinYutakaWidget(context)),
-            ],
+            if (Platform.isAndroid) const DeviceLockSettingsTile(),
             SettingsTile(icon: Icons.privacy_tip_rounded, title: 'Privacy & data', subtitle: state.privacyTelemetryEnabled ? 'Telemetry enabled • policy and data controls' : 'Telemetry off • policy and data controls', color: '#B4A5FF', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyAndDataScreen()))),
             if (!kIsGooglePlayBuild && !kIsFlatpakBuild)
               SettingsTile(icon: Icons.system_update_alt_rounded, title: 'Updates', subtitle: state.updateStatusMessage, color: kSleekAccentHex, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdatesScreen()))),
@@ -26513,223 +26577,20 @@ Future<List<String>?> showCurrencyWheelPickerSheet(
   required String selectedCode,
   required String selectedSymbol,
 }) async {
-  var search = '';
-
-  List<List<String>> filteredCountries() {
-    final query = search.trim().toLowerCase();
-    final filtered = query.isEmpty
-        ? countries.toList()
-        : countries.where((c) => c.join(' ').toLowerCase().contains(query)).toList();
-    filtered.sort((a, b) => a[0].compareTo(b[0]));
-    return filtered;
-  }
-
-  final initialCountries = filteredCountries();
-  var selectedIndex = initialCountries.indexWhere((c) => c[2] == selectedCode && c[1] == selectedSymbol);
-  if (selectedIndex < 0) selectedIndex = initialCountries.indexWhere((c) => c[2] == selectedCode);
-  if (selectedIndex < 0) selectedIndex = 0;
-
-  const rowExtent = 72.0;
-  final initialListHeight = math.min(288.0, math.max(rowExtent, initialCountries.length * rowExtent));
-  final initialMaxScrollExtent = math.max(0.0, (initialCountries.length * rowExtent) - initialListHeight);
-  final listController = ScrollController(
-    initialScrollOffset: math.min(
-      initialMaxScrollExtent,
-      math.max(0.0, (selectedIndex - 1) * rowExtent),
-    ),
+  if (countries.isEmpty) return null;
+  final sorted = countries.toList()..sort((a, b) => a[0].compareTo(b[0]));
+  var selectedIndex = sorted.indexWhere((country) => country[2] == selectedCode && country[1] == selectedSymbol);
+  if (selectedIndex < 0) selectedIndex = sorted.indexWhere((country) => country[2] == selectedCode);
+  final result = await showAppleWheelSelectionSheet(context,
+    title: 'Choose currency', selectedId: '${selectedIndex < 0 ? 0 : selectedIndex}',
+    searchHint: 'Search countries or currency code',
+    options: List.generate(sorted.length, (index) => SelectionOption(
+      id: '$index', title: sorted[index][0], subtitle: sorted[index][2],
+      symbol: sorted[index][1], iconName: 'cash', iconColor: kSleekAccentHex,
+    )),
   );
-
-  final result = await showYutakaPopup<List<String>>(
-    context,
-    maxWidth: 560,
-    maxHeight: 660,
-    child: StatefulBuilder(
-      builder: (dialogContext, setModalState) {
-        final filtered = filteredCountries();
-        if (filtered.isNotEmpty && selectedIndex >= filtered.length) selectedIndex = 0;
-        final safeIndex = filtered.isEmpty
-            ? 0
-            : selectedIndex < 0
-                ? 0
-                : selectedIndex >= filtered.length
-                    ? filtered.length - 1
-                    : selectedIndex;
-        final selected = filtered.isEmpty ? null : filtered[safeIndex];
-        final listHeight = filtered.isEmpty
-            ? 96.0
-            : math.min(288.0, math.max(rowExtent, filtered.length * rowExtent));
-        final dark = Theme.of(dialogContext).brightness == Brightness.dark;
-        final innerColor = dark ? kSleekSurfaceLow : kSleekLightBackground;
-        final innerBorderColor = dark ? kSleekOutlineVariant : kSleekLightOutlineVariant;
-        final handleColor = dark ? const Color(0xFF466057) : const Color(0xFFB7C9BF);
-
-        return YutakaPopupContent(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 44,
-                height: 5,
-                decoration: BoxDecoration(color: handleColor, borderRadius: BorderRadius.circular(999)),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Choose currency',
-                textAlign: TextAlign.center,
-                style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 12),
-              TextField(contextMenuBuilder: yutakaTextFieldContextMenu, enableInteractiveSelection: true, 
-                onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-                autofocus: false,
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search_rounded),
-                  hintText: 'Search countries or currency code',
-                ),
-                onChanged: (value) {
-                  setModalState(() {
-                    search = value;
-                    selectedIndex = 0;
-                  });
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (listController.hasClients) listController.jumpTo(0);
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              AnimatedContainer(
-                duration: AppMotion.fast,
-                curve: AppMotion.emphasized,
-                height: listHeight,
-                decoration: BoxDecoration(
-                  color: innerColor,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: innerBorderColor),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: filtered.isEmpty
-                    ? Center(
-                        child: Text(
-                          'No currency found',
-                          style: Theme.of(dialogContext).textTheme.bodyLarge?.copyWith(color: kSleekMuted, fontWeight: FontWeight.w700),
-                        ),
-                      )
-                    : Scrollbar(
-                        controller: listController,
-                        thumbVisibility: kIsDesktopApp && filtered.length > 4,
-                        child: ListView.builder(
-                          controller: listController,
-                          itemExtent: rowExtent,
-                          padding: EdgeInsets.zero,
-                          physics: optimizedScrollPhysics(dialogContext),
-                          itemCount: filtered.length,
-                          itemBuilder: (context, index) {
-                            final c = filtered[index];
-                            final isSelected = index == safeIndex;
-                            return Material(
-                              color: Colors.transparent,
-                              child: MotionInkWell(
-                                onTap: () => setModalState(() => selectedIndex = index),
-                                child: _CurrencyWheelRow(country: c, selected: isSelected),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(dialogContext),
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: FilledButton(
-                      onPressed: selected == null ? null : () => Navigator.pop(dialogContext, selected),
-                      child: const Text('Done'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    ),
-  );
-
-  listController.dispose();
-  return result;
-}
-
-class _CurrencyWheelRow extends StatelessWidget {
-  const _CurrencyWheelRow({required this.country, required this.selected});
-
-  final List<String> country;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return AnimatedContainer(
-      duration: AppMotion.fast,
-      curve: AppMotion.emphasized,
-      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: selected ? kSleekAccent.withOpacity(.10) : Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: selected ? kSleekAccent.withOpacity(.52) : Colors.transparent,
-          width: 1.1,
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          _CurrencySymbolBubble(symbol: country[1], selected: selected),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  country[0],
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: selected ? scheme.onSurface : scheme.onSurface.withOpacity(.76),
-                      ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${country[1]} • ${country[2]}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: selected ? kSleekMuted : kSleekMuted.withOpacity(.72),
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ],
-            ),
-          ),
-          if (selected) ...[
-            const SizedBox(width: 10),
-            const Icon(Icons.check_rounded, color: kSleekAccent, size: 22),
-          ],
-        ],
-      ),
-    );
-  }
+  final index = int.tryParse(result ?? '');
+  return index == null ? null : sorted[index];
 }
 
 class _CurrencySymbolBubble extends StatelessWidget {
@@ -26741,7 +26602,7 @@ class _CurrencySymbolBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
+      duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 160),
       width: 44,
       height: 44,
       decoration: BoxDecoration(
