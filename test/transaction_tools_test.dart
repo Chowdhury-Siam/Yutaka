@@ -329,6 +329,8 @@ void main() {
 
   for (final splitAccounts in [false, true]) {
     testWidgets('${splitAccounts ? 'account' : 'category'} split shows allocation status and returns validated shares', (tester) async {
+      final semantics = tester.ensureSemantics();
+      addTearDown(semantics.dispose);
       await tester.binding.setSurfaceSize(const Size(360, 640));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       Map<String, double>? result;
