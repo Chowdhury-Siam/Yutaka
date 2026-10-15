@@ -21,8 +21,8 @@ android {
         applicationId = "com.yutaka.siam"
         minSdk = 23
         targetSdk = 36
-        versionCode = 366
-        versionName = "1.0.1322"
+        versionCode = 367
+        versionName = "1.0.1323"
         multiDexEnabled true
     }
 
