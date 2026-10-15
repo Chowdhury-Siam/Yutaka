@@ -33,9 +33,12 @@ String transactionAccountSummary(AppController state, MoneyTransaction tx) => tx
     : tx.accountAmounts.entries.map((entry) => '${state.accountOf(entry.key)?.name ?? 'Unknown account'}: ${_analyticsReportMoney(state, entry.value)}').join(' + ');
 
 bool transactionMatchesSearch(AppController state, MoneyTransaction tx, String query) {
+  if (query.trim().isEmpty) { return true; }
   final terms = query.trim().toLowerCase().split(RegExp(r'\s+')).where((term) => term.isNotEmpty);
   final loan = tx.linkedEntityType == 'loans' ? state.loanOf(tx.linkedEntityId ?? '')
-      : state.loanOf(state.loanPayments.where((payment) => payment.id == tx.linkedEntityId).firstOrNull?.loanId ?? '');
+      : tx.linkedEntityType == 'loan_payments'
+          ? state.loanOf(state.loanPayments.where((payment) => payment.id == tx.linkedEntityId).firstOrNull?.loanId ?? '')
+          : null;
   final text = [tx.title, tx.notes, tx.displayType, tx.amount.toString(), tx.baseAmount.toString(),
     tx.amount.toStringAsFixed(2), tx.baseAmount.toStringAsFixed(2), state.format(tx.amount), ...tx.accountAmounts.keys.map((id) => state.accountOf(id)?.name ?? ''),
     state.accountOf(tx.toAccountId ?? '')?.name ?? '',
@@ -433,7 +436,7 @@ class _TransactionSplitsPopupState extends State<_TransactionSplitsPopup> {
           ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(
             value: progress, minHeight: 4, color: over ? scheme.error : kSleekAccent,
             backgroundColor: scheme.outlineVariant.withOpacity(.25),
-            semanticsLabel: 'Allocated amount', semanticsValue: state.format(sum.isFinite ? sum : 0),
+            semanticsLabel: 'Allocated amount',
           )),
           if (error != null) ...[
             const SizedBox(height: 8),
@@ -464,75 +467,72 @@ class _TransactionSplitsPopupState extends State<_TransactionSplitsPopup> {
           ]),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: kSleekAccent.withOpacity(.08), borderRadius: BorderRadius.circular(14)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('To allocate: ${state.format(widget.total)}',
-                style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              Text('Before fees. Fees follow each share.',
-                style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-            ]),
-          ),
-          const SizedBox(height: 8),
-          Flexible(child: ListView.separated(
-            shrinkWrap: true,
-            padding: EdgeInsets.zero,
-            itemCount: options.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 4),
-            itemBuilder: (context, index) {
-              final option = options[index];
-              final controller = amounts.putIfAbsent(option.id, TextEditingController.new);
-              final color = colorFromHex(option.iconColor);
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: LayoutBuilder(builder: (context, constraints) {
-                  final stacked = constraints.maxWidth < 280 || MediaQuery.textScalerOf(context).scale(14) > 18;
-                  final label = Row(children: [
-                    Container(width: 32, height: 32,
-                      decoration: BoxDecoration(color: color.withOpacity(.12), borderRadius: BorderRadius.circular(10)),
-                      child: Center(child: iconGlyph(context, option.iconName, color: color, size: 20))),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text(option.name, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
-                  ]);
-                  final field = Semantics(
-                    label: 'Amount for ${option.name}',
-                    child: TextField(
-                      key: ValueKey('split-amount-${option.id}'),
-                      contextMenuBuilder: yutakaTextFieldContextMenu,
-                      enableInteractiveSelection: true,
-                      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-                      controller: controller,
-                      textAlign: TextAlign.end,
-                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      textInputAction: index == options.length - 1 ? TextInputAction.done : TextInputAction.next,
-                      onChanged: (_) => setState(() => error = null),
-                      decoration: InputDecoration(
-                        labelText: 'Amount', hintText: '0.00', isDense: true,
-                        floatingLabelBehavior: FloatingLabelBehavior.always,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                        filled: true, fillColor: scheme.surfaceContainerHighest.withOpacity(.3),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: scheme.outlineVariant)),
-                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kSleekAccent, width: 1.5)),
-                      ),
-                    ),
-                  );
-                  if (stacked) {
-                    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [label, const SizedBox(height: 8), field]);
-                  }
-                  return Row(children: [Expanded(child: label), const SizedBox(width: 12), SizedBox(width: 116, child: field)]);
-                }),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: options.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(height: 4),
+        itemBuilder: (context, rowIndex) {
+          if (rowIndex == 0) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: kSleekAccent.withOpacity(.08), borderRadius: BorderRadius.circular(14)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Text('To allocate: ${state.format(widget.total)}',
+                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text('Before fees. Fees follow each share.',
+                  style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+              ]),
+            );
+          }
+          final index = rowIndex - 1;
+          final option = options[index];
+          final controller = amounts.putIfAbsent(option.id, TextEditingController.new);
+          final color = colorFromHex(option.iconColor);
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: LayoutBuilder(builder: (context, constraints) {
+              final stacked = constraints.maxWidth < 280 || MediaQuery.textScalerOf(context).scale(14) > 18;
+              final label = Row(children: [
+                Container(width: 32, height: 32,
+                  decoration: BoxDecoration(color: color.withOpacity(.12), borderRadius: BorderRadius.circular(10)),
+                  child: Center(child: iconGlyph(context, option.iconName, color: color, size: 20))),
+                const SizedBox(width: 10),
+                Expanded(child: Text(option.name, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+              ]);
+              final field = Semantics(
+                label: 'Amount for ${option.name}',
+                child: TextField(
+                  key: ValueKey('split-amount-${option.id}'),
+                  contextMenuBuilder: yutakaTextFieldContextMenu,
+                  enableInteractiveSelection: true,
+                  onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                  controller: controller,
+                  textAlign: TextAlign.end,
+                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textInputAction: index == options.length - 1 ? TextInputAction.done : TextInputAction.next,
+                  onChanged: (_) => setState(() => error = null),
+                  decoration: InputDecoration(
+                    labelText: 'Amount', hintText: '0.00', isDense: true,
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                    filled: true, fillColor: scheme.surfaceContainerHighest.withOpacity(.3),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: scheme.outlineVariant)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kSleekAccent, width: 1.5)),
+                  ),
+                ),
               );
-            },
-          )),
-        ],
+              if (stacked) {
+                return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [label, const SizedBox(height: 8), field]);
+              }
+              return Row(children: [Expanded(child: label), const SizedBox(width: 12), SizedBox(width: 116, child: field)]);
+            }),
+          );
+        },
       ),
     );
   }
