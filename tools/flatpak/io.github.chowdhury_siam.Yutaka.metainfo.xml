@@ -32,6 +32,9 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1311" date="2026-10-15">
+      <description><p>Keep loan interest timing choices inside the dialog with rounded, wrapping controls that leave the rate and Save action visible.</p></description>
+    </release>
     <release version="1.0.1310" date="2026-10-15">
       <description><p>Fix loan interest release checks while preserving text selection, note layouts, and accessible scrolling.</p></description>
     </release>
