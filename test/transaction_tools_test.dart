@@ -352,7 +352,7 @@ void main() {
     await tester.tap(find.byTooltip('Clear search'));
     await tester.pump();
     expect(find.text('Market'), findsOneWidget);
-    await tester.tap(find.text('Shortcuts'));
+    await tester.tap(find.byTooltip('Shortcuts'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Market shortcut'));
     await tester.pumpAndSettle();
