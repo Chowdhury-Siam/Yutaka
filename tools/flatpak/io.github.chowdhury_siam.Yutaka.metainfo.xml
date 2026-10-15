@@ -32,6 +32,12 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1308" date="2026-10-15">
+      <description><p>Compact the Transaction header, search tools, and record summary to leave more space for transactions.</p></description>
+    </release>
+    <release version="1.0.1307" date="2026-10-15">
+      <description><p>Refine saved shortcuts with compact adaptive cards and clearly grouped Rename and Delete shortcut buttons.</p></description>
+    </release>
     <release version="1.0.1306" date="2026-10-15">
       <description><p>Place split controls inside Category and Account fields and move Save shortcut below Save.</p></description>
     </release>
