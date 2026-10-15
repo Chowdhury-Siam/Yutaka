@@ -311,6 +311,7 @@ Future<LoanInterestConfiguration?> showLoanInterestConfiguration(
                           key: rateFieldKey,
                           initialValue: workingRate,
                           contextMenuBuilder: yutakaTextFieldContextMenu,
+                          enableInteractiveSelection: true,
                           onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           onChanged: (value) {
