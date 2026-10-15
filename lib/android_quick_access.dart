@@ -66,11 +66,16 @@ class _DeviceLockSettingsTileState extends State<DeviceLockSettingsTile> {
   @override
   Widget build(BuildContext context) {
     final enabled = context.select<AppController, bool>((state) => state.deviceLockEnabled);
-    return SwitchListTile(
-      secondary: const Icon(Icons.fingerprint_rounded, color: kSleekAccent),
-      title: const Text('Fingerprint / device lock'),
-      subtitle: const Text('Lock when leaving Yutaka. Use your fingerprint or device screen lock. Widget amounts stay hidden while enabled.'),
-      value: enabled, onChanged: busy ? null : _toggle,
+    return SettingsTile(
+      icon: Icons.fingerprint_rounded,
+      title: 'Fingerprint / device lock',
+      subtitle: 'Lock on exit • hide widget amounts',
+      color: kSleekAccentHex,
+      onTap: busy ? null : () => _toggle(!enabled),
+      trailing: Semantics(
+        label: 'Fingerprint / device lock',
+        child: Switch(value: enabled, onChanged: busy ? null : _toggle),
+      ),
     );
   }
 }
