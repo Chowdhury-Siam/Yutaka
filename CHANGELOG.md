@@ -1,3 +1,14 @@
+## 1.0.1327+371
+
+- Apply a shared slim, rounded scrollbar style across the app, including account, category, date and currency selection lists. Use a subdued theme-aware thumb with no visible track and more visible hover/drag states.
+- Retain native scrolling, scrollbar dragging, fade animation, list behavior, blur and all previous fixes. Keep Worker version 1.0.1305 unchanged.
+
+## 1.0.1326+370
+
+- Compact shared form configuration buttons and center short values within the same summary area as date/time values. Retain aligned headings, complete dates, time ranges and AM/PM grouping.
+- Restyle Repeat as four distinct calendar choices in a compact two-column picker. Use a scrolling list for large text or narrow popups, with the current choice marked and immediate selection preserved.
+- Preserve all previous fixes, animations, blur, financial logic and scheduling. Keep Worker version 1.0.1305 unchanged.
+
 ## 1.0.1325+369
 
 - Separate date and time summaries onto explicit lines and keep AM/PM with its time. Top-align shared compact configuration buttons so adjacent headings line up.
