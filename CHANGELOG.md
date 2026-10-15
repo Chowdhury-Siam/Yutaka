@@ -1,3 +1,25 @@
+## 1.0.1322+366
+
+- Keep Transaction search, shortcuts, recently deleted, and record summary fixed below the app bar while the transaction list scrolls or overscrolls.
+- Retain elastic scrolling, lazy transaction rows, swipe actions, filter chips, search behavior, and bottom navigation clearance. Keep active filter chips within the scrolling list so long filter groups remain reachable.
+- Add pull-down and scrolling regression coverage for empty and populated history at standard and large text sizes. Retain previous fixes and Worker version 1.0.1305.
+
+## 1.0.1321+365
+
+- Redesign shared choice pickers with a small header emblem, shaped selection cards, animated check marks and corners, and a divided confirmation footer.
+- Display date ranges as a two-column tile palette at standard text sizes, using a scrollable single column for larger text. Size tile rows from their content instead of fixed heights.
+- Give category, account, and currency choices the same card system. Keep the initial current choice visible first without moving rows after draft selection changes.
+- Bring currency into the shared picker with symbol badges, searchable country/code labels, stable selection IDs, and latest-tap confirmation. Keep Cancel, Done, inline creation, and reduced-motion behavior.
+- Extend short-screen large-text coverage to account and currency pickers, and add date-grid/currency-search regression checks. Retain prior fixes and Worker version 1.0.1305.
+
+## 1.0.1320+364
+
+- When device lock is enabled, allow a ten-second background grace period. Keep private content covered immediately, and automatically authenticate again after the grace period expires.
+- Check the saved deadline before showing content or opening a quick action on resume, even if Android suspended the background timer. Keep cold-start authentication and avoid repeat prompts from the native authentication UI.
+- Cancel the background lock on a quick return, when device lock is disabled, and when the gate is disposed. Keep repeated lifecycle events from extending the grace period.
+- Remove the Home-screen widget entry from Settings while preserving the Android launcher widget and its refresh/quick-action behavior.
+- Add grace-period, suspended-timer, disabled-lock, and native-prompt regression coverage. Keep all previous fixes and Worker version 1.0.1305.
+
 ## 1.0.1319+363
 
 - Keep picker confirmation buttons equally sized and move inline account/category creation into the scrollable choices so large text cannot overflow the fixed footer.
