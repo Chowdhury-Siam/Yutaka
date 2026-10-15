@@ -27,7 +27,9 @@ void main() {
 
   test('loan and loan-payment notes use fixed content with shared keyboard positioning', () {
     final file = File('lib/loans/loan_sheets.dart').readAsStringSync();
-    final source = file.substring(0, file.indexOf('Future<void> showLoanPreferencesSheet'));
+    final editorStart = file.indexOf('Future<void> showLoanEditorSheet');
+    expect(editorStart, greaterThanOrEqualTo(0));
+    final source = file.substring(editorStart, file.indexOf('Future<void> showLoanPreferencesSheet'));
     final app = File('lib/main.dart').readAsStringSync();
     expect(source, contains('return YutakaPopupContent('));
     expect(source, isNot(contains('SingleChildScrollView(')));
