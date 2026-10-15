@@ -1,3 +1,12 @@
+## 1.0.1319+363
+
+- Keep picker confirmation buttons equally sized and move inline account/category creation into the scrollable choices so large text cannot overflow the fixed footer.
+- Use compact line spacing for wrapped popup headings to leave room for the body and actions on short screens.
+- Dispose split-test accessibility handles inside the test before Flutter performs its end-of-test checks.
+- Update the loan-visibility source contract for cached transaction rows, and test compact savings cards relative to the standard layout rather than a font-dependent pixel limit.
+- Check large-text savings actions through scrolling and verify picker confirmation remains reachable while scrolling to the final category.
+- Retain all performance, automatic authentication, logo, animation, and blur changes from 1.0.1318. Keep Worker version 1.0.1305 unchanged.
+
 ## 1.0.1318+362
 
 - Avoid finance-page rebuilds on unrelated sync/update progress; reuse transaction sorting while typing and skip search formatting for blank queries.
