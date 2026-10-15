@@ -254,7 +254,7 @@ class TransactionShortcutsScreen extends StatelessWidget {
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
       ))],
       itemCount: state.transactionShortcuts.length,
-      empty: const EmptyCard(icon: Icons.bolt_rounded, title: 'No shortcuts yet', body: 'Open Add transaction, choose an account and category, then tap Save shortcut.'),
+      empty: const EmptyCard(animated: true, icon: Icons.bolt_rounded, title: 'No shortcuts yet', body: 'Open Add transaction, choose an account and category, then tap Save shortcut.'),
       itemBuilder: (context, index) {
         final shortcut = state.transactionShortcuts[index];
         final type = switch (shortcut.draft.type) {
@@ -345,7 +345,7 @@ class _RecentlyDeletedTransactionsScreenState extends State<RecentlyDeletedTrans
       return ResponsiveListContent(
         header: const [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Deleted transactions stay on this device for 30 days. Restore brings back the transaction and its balance effect. Switching accounts clears this list.'))],
         itemCount: items.length,
-        empty: const EmptyCard(icon: Icons.delete_outline_rounded, title: 'Nothing to restore', body: 'Transactions deleted on this device will appear here.'),
+        empty: const EmptyCard(animated: true, icon: Icons.delete_outline_rounded, title: 'Nothing to restore', body: 'Transactions deleted on this device will appear here.'),
         itemBuilder: (context, index) {
           final row = items[index];
           final payload = jsonDecode(row['payload_json'] as String) as Map;
@@ -363,7 +363,7 @@ class _RecentlyDeletedTransactionsScreenState extends State<RecentlyDeletedTrans
 
 Future<Map<String, double>?> showTransactionSplits(BuildContext context, {required MoneyTransactionType type,
     required double total, required Map<String, double> initial, bool splitAccounts = false}) => showYutakaPopup<Map<String, double>>(
-  context, maxWidth: 500, maxHeight: 650,
+  context, maxWidth: 500, maxHeight: 600,
   child: _TransactionSplitsPopup(type: type, total: total, initial: initial, splitAccounts: splitAccounts),
 );
 
@@ -395,56 +395,145 @@ class _TransactionSplitsPopupState extends State<_TransactionSplitsPopup> {
   @override
   Widget build(BuildContext context) {
     final state = context.read<AppController>();
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final options = widget.splitAccounts
-        ? state.operatingAccounts.map((account) => (id: account.id, name: account.name, iconName: account.iconName)).toList()
+        ? state.operatingAccounts.map((account) => (id: account.id, name: account.name, iconName: account.iconName, iconColor: account.iconColor)).toList()
         : state.categories.where((category) => category.type ==
             (widget.type == MoneyTransactionType.income ? CategoryType.income : CategoryType.expense))
-            .map((category) => (id: category.id, name: category.name, iconName: category.iconName)).toList();
+            .map((category) => (id: category.id, name: category.name, iconName: category.iconName, iconColor: category.iconColor)).toList();
     final kind = widget.splitAccounts ? 'accounts' : 'categories';
-    final sum = amounts.values.fold<double>(0, (sum, controller) => sum + (double.tryParse(controller.text) ?? 0));
-    return Padding(padding: const EdgeInsets.all(20), child: Column(mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text('Split $kind', style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 8),
-      Text('Allocate ${state.format(widget.total)} before any service charge. Fees are shared proportionally across $kind.'),
-      const SizedBox(height: 12),
-      Flexible(child: SingleChildScrollView(child: Column(children: options.map((category) {
-        final controller = amounts.putIfAbsent(category.id, TextEditingController.new);
-        return Padding(padding: const EdgeInsets.only(bottom: 10), child: TextField(
-          contextMenuBuilder: yutakaTextFieldContextMenu,
-          enableInteractiveSelection: true,
-          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-          controller: controller, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          onChanged: (_) => setState(() => error = null), decoration: InputDecoration(labelText: category.name,
-              hintText: 'Leave blank to skip', prefixIcon: Icon(iconFor(category.iconName))),
-        ));
-      }).toList()))),
-      const SizedBox(height: 8),
-      Text('Remaining: ${state.format(widget.total - sum)}', style: TextStyle(color: (widget.total - sum).abs() <= .005 ? kSleekAccent : kSleekExpense)),
-      if (error != null) Text(error!, style: const TextStyle(color: kSleekExpense)),
-      Row(children: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        TextButton(onPressed: () => Navigator.pop(context, <String, double>{}), child: const Text('Clear')),
-        const Spacer(),
-        FilledButton(onPressed: () {
-          final splits = <String, double>{};
-          for (final category in options) {
-            final text = amounts[category.id]?.text.trim() ?? '';
-            if (text.isEmpty) { continue; }
-            final amount = double.tryParse(text);
-            if (amount == null || !amount.isFinite || amount <= 0) {
-              setState(() => error = 'Enter positive amounts or leave an amount blank.');
-              return;
-            }
-            splits[category.id] = amount;
-          }
-          if (splits.length < 2 || splits.length > 20 || (splits.values.fold<double>(0, (sum, value) => sum + value) - widget.total).abs() > .005) {
-            setState(() => error = 'Use 2–20 $kind whose amounts equal the total.');
-            return;
-          }
-          Navigator.pop(context, splits);
-        }, child: const Text('Done')),
-      ]),
-    ]));
+    final sum = amounts.values.fold<double>(0, (sum, controller) {
+      final value = double.tryParse(controller.text);
+      return sum + (value != null && value.isFinite ? value : 0);
+    });
+    final remaining = widget.total - sum;
+    final balanced = remaining.isFinite && remaining.abs() <= .005;
+    final over = !remaining.isFinite || remaining < -.005;
+    final statusColor = balanced ? kSleekAccent : over ? scheme.error : scheme.onSurfaceVariant;
+    final status = !remaining.isFinite ? 'Check amounts'
+        : balanced ? 'Fully allocated'
+        : over ? 'Over by ${state.format(-remaining)}' : 'Remaining: ${state.format(remaining)}';
+    final progress = widget.total > 0 && widget.total.isFinite && sum.isFinite
+        ? (sum / widget.total).clamp(0.0, 1.0).toDouble() : 0.0;
+
+    return CompactPopupContent(
+      title: 'Split $kind',
+      actions: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(liveRegion: true, child: Row(children: [
+            Icon(balanced ? Icons.check_circle_rounded : over ? Icons.error_outline_rounded : Icons.pie_chart_outline_rounded,
+              color: statusColor, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(status, style: theme.textTheme.bodySmall?.copyWith(color: statusColor, fontWeight: FontWeight.w700))),
+          ])),
+          const SizedBox(height: 8),
+          ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(
+            value: progress, minHeight: 4, color: over ? scheme.error : kSleekAccent,
+            backgroundColor: scheme.outlineVariant.withOpacity(.25),
+            semanticsLabel: 'Allocated amount', semanticsValue: state.format(sum.isFinite ? sum : 0),
+          )),
+          if (error != null) ...[
+            const SizedBox(height: 8),
+            Semantics(liveRegion: true, child: Text(error!, style: theme.textTheme.bodySmall?.copyWith(color: scheme.error))),
+          ],
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.end, children: [
+            OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(context, <String, double>{}), child: const Text('Clear')),
+            FilledButton(onPressed: () {
+              final splits = <String, double>{};
+              for (final category in options) {
+                final text = amounts[category.id]?.text.trim() ?? '';
+                if (text.isEmpty) { continue; }
+                final amount = double.tryParse(text);
+                if (amount == null || !amount.isFinite || amount <= 0) {
+                  setState(() => error = 'Enter positive amounts or leave an amount blank.');
+                  return;
+                }
+                splits[category.id] = amount;
+              }
+              if (splits.length < 2 || splits.length > 20 || (splits.values.fold<double>(0, (sum, value) => sum + value) - widget.total).abs() > .005) {
+                setState(() => error = 'Use 2–20 $kind whose amounts equal the total.');
+                return;
+              }
+              Navigator.pop(context, splits);
+            }, child: const Text('Done')),
+          ]),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: kSleekAccent.withOpacity(.08), borderRadius: BorderRadius.circular(14)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('To allocate: ${state.format(widget.total)}',
+                style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text('Before fees. Fees follow each share.',
+                style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          Flexible(child: ListView.separated(
+            shrinkWrap: true,
+            padding: EdgeInsets.zero,
+            itemCount: options.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 4),
+            itemBuilder: (context, index) {
+              final option = options[index];
+              final controller = amounts.putIfAbsent(option.id, TextEditingController.new);
+              final color = colorFromHex(option.iconColor);
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: LayoutBuilder(builder: (context, constraints) {
+                  final stacked = constraints.maxWidth < 280 || MediaQuery.textScalerOf(context).scale(14) > 18;
+                  final label = Row(children: [
+                    Container(width: 32, height: 32,
+                      decoration: BoxDecoration(color: color.withOpacity(.12), borderRadius: BorderRadius.circular(10)),
+                      child: Center(child: iconGlyph(context, option.iconName, color: color, size: 20))),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(option.name, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+                  ]);
+                  final field = Semantics(
+                    label: 'Amount for ${option.name}',
+                    child: TextField(
+                      key: ValueKey('split-amount-${option.id}'),
+                      contextMenuBuilder: yutakaTextFieldContextMenu,
+                      enableInteractiveSelection: true,
+                      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                      controller: controller,
+                      textAlign: TextAlign.end,
+                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      textInputAction: index == options.length - 1 ? TextInputAction.done : TextInputAction.next,
+                      onChanged: (_) => setState(() => error = null),
+                      decoration: InputDecoration(
+                        labelText: 'Amount', hintText: '0.00', isDense: true,
+                        floatingLabelBehavior: FloatingLabelBehavior.always,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                        filled: true, fillColor: scheme.surfaceContainerHighest.withOpacity(.3),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: scheme.outlineVariant)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kSleekAccent, width: 1.5)),
+                      ),
+                    ),
+                  );
+                  if (stacked) {
+                    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [label, const SizedBox(height: 8), field]);
+                  }
+                  return Row(children: [Expanded(child: label), const SizedBox(width: 12), SizedBox(width: 116, child: field)]);
+                }),
+              );
+            },
+          )),
+        ],
+      ),
+    );
   }
 }
