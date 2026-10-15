@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('every app TextField exposes the adaptive selection context menu', () {
+  test('every app TextField and TextFormField exposes the adaptive selection menu', () {
     final files = [
       File('lib/main.dart'),
       File('lib/loans/loan_sheets.dart'),
@@ -17,7 +17,7 @@ void main() {
     var interactiveSelections = 0;
     for (final file in files) {
       final source = file.readAsStringSync();
-      fields += RegExp(r'\bTextField\(').allMatches(source).length;
+      fields += RegExp(r'\bText(?:Form)?Field\(').allMatches(source).length;
       contextMenus += RegExp(r'contextMenuBuilder:\s*yutakaTextFieldContextMenu').allMatches(source).length;
       interactiveSelections += RegExp(r'enableInteractiveSelection:\s*true').allMatches(source).length;
     }
