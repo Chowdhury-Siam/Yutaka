@@ -1,3 +1,9 @@
+## 1.0.1324+368
+
+- Place Time • Date and Service charge side by side with equal widths and matching heights in the shared transaction editor.
+- Apply the same row to new and edited expenses, income and transfers, including saved-shortcut drafts. Allow labels and summaries to wrap inside each button.
+- Preserve date/time ranges, service-charge calculations, loan-linked restrictions, animations and blur. Retain previous fixes and Worker version 1.0.1305.
+
 ## 1.0.1323+367
 
 - Move Add account and Add category below the choices, above Cancel and Done, in the shared picker footer.
