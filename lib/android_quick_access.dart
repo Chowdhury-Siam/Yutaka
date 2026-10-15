@@ -69,7 +69,7 @@ class _DeviceLockSettingsTileState extends State<DeviceLockSettingsTile> {
     return SettingsTile(
       icon: Icons.fingerprint_rounded,
       title: 'Fingerprint / device lock',
-      subtitle: 'Lock on exit • hide widget amounts',
+      subtitle: 'Lock after 10 seconds away',
       color: kSleekAccentHex,
       onTap: busy ? null : () => _toggle(!enabled),
       trailing: Semantics(
@@ -82,13 +82,15 @@ class _DeviceLockSettingsTileState extends State<DeviceLockSettingsTile> {
 }
 
 class DeviceLockGate extends StatefulWidget {
-  const DeviceLockGate({super.key, required this.child});
+  const DeviceLockGate({super.key, required this.child, this.now = DateTime.now});
   final Widget child;
+  final DateTime Function() now;
   @override
   State<DeviceLockGate> createState() => _DeviceLockGateState();
 }
 
 class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObserver {
+  static const _lockDelay = Duration(seconds: 10);
   AppController? controller;
   bool bootstrapped = false;
   bool locked = true;
@@ -98,6 +100,8 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
   String? pendingAction;
   String? message;
   Timer? refreshTimer;
+  Timer? backgroundLockTimer;
+  DateTime? lockDeadline;
   bool openingAction = false;
   Object? widgetSnapshot;
 
@@ -146,7 +150,10 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
       bootstrapped = true;
       locked = _androidQuickAccessSupported && state.deviceLockEnabled;
     }
-    if (!state.deviceLockEnabled && bootstrapped) { locked = false; }
+    if (!state.deviceLockEnabled) {
+      _cancelBackgroundLock();
+      if (bootstrapped) { locked = false; }
+    }
     if (mounted && previousGate != (bootstrapped, locked)) { setState(() {}); }
     final snapshot = (state.loading, state.transactions, state.currencySymbol,
       state.currencyPosition, state.deviceLockEnabled, state.useSeparators, state.amountsHidden);
@@ -204,18 +211,43 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
     _openPendingAction();
   }
 
+  void _cancelBackgroundLock() {
+    backgroundLockTimer?.cancel();
+    backgroundLockTimer = null;
+    lockDeadline = null;
+  }
+
+  void _startBackgroundLock() {
+    // Native authentication can also pause the app. Its return must not
+    // create a fresh lock request or reopen a cancelled prompt.
+    if (authenticating) { return; }
+    automaticUnlockPending = true;
+    if (locked || lockDeadline != null) { return; }
+    lockDeadline = widget.now().add(_lockDelay);
+    backgroundLockTimer = Timer(_lockDelay, () {
+      backgroundLockTimer = null;
+      if (mounted && !foreground && controller?.deviceLockEnabled == true) {
+        setState(() => locked = true);
+      }
+    });
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     foreground = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
       if (controller?.deviceLockEnabled == true) {
-        // The native authentication UI also changes lifecycle state. Do not
-        // treat its return as a fresh request, especially after cancellation.
-        if (!authenticating) { automaticUnlockPending = true; }
+        _startBackgroundLock();
         FocusManager.instance.primaryFocus?.unfocus();
-        setState(() => locked = true);
+        // Hide private content immediately, even during the grace period.
+        setState(() {});
       }
     } else if (state == AppLifecycleState.resumed) {
+      // Android may suspend Dart timers in the background. Check the saved
+      // deadline before exposing any content or opening a widget quick action.
+      final expired = lockDeadline != null && !widget.now().isBefore(lockDeadline!);
+      _cancelBackgroundLock();
+      if (expired && controller?.deviceLockEnabled == true) { locked = true; }
       setState(() {});
       _promptAutomaticUnlock();
       if (_androidQuickAccessSupported) { _loadPendingAction(); }
@@ -227,6 +259,7 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
   @override
   void dispose() {
     refreshTimer?.cancel();
+    _cancelBackgroundLock();
     controller?.removeListener(_stateChanged);
     WidgetsBinding.instance.removeObserver(this);
     if (_androidQuickAccessSupported) { _deviceAccessChannel.setMethodCallHandler(null); }
