@@ -16695,22 +16695,10 @@ class _PlannedPurchaseEditorState extends State<PlannedPurchaseEditor> {
     setState(() => reminderEnabled = value);
   }
 
-  Future<void> _pickReminderDate() async {
+  Future<void> _pickReminderDateTime() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    final picked = await pickDate(context, reminderAt);
-    if (picked == null || !mounted) return;
-    setState(() {
-      reminderAt = DateTime(picked.year, picked.month, picked.day, reminderAt.hour, reminderAt.minute);
-    });
-  }
-
-  Future<void> _pickReminderTime() async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    final picked = await pickTime(context, TimeOfDay.fromDateTime(reminderAt));
-    if (picked == null || !mounted) return;
-    setState(() {
-      reminderAt = DateTime(reminderAt.year, reminderAt.month, reminderAt.day, picked.hour, picked.minute);
-    });
+    final selected = await showSingleDateTimeConfiguration(context, initial: reminderAt);
+    if (selected != null && mounted) setState(() => reminderAt = selected);
   }
 
   @override
@@ -16817,24 +16805,12 @@ class _PlannedPurchaseEditorState extends State<PlannedPurchaseEditor> {
             ),
             if (reminderEnabled) ...[
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickReminderDate,
-                      icon: const Icon(Icons.calendar_month_rounded),
-                      label: Text(DateFormat('MMM d, yyyy').format(reminderAt)),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _pickReminderTime,
-                      icon: const Icon(Icons.schedule_rounded),
-                      label: Text(DateFormat('h:mm a').format(reminderAt)),
-                    ),
-                  ),
-                ],
+              _ConfigurationButton(
+                onPressed: _pickReminderDateTime,
+                icon: Icons.event_rounded,
+                title: 'Time • Date',
+                summary: _configurationDateTimeSummary(
+                  DateFormat('MMM d, yyyy').format(reminderAt), DateFormat('h:mm a').format(reminderAt)),
               ),
             ],
             const SizedBox(height: 18),
@@ -17250,16 +17226,10 @@ class _SubscriptionManualEntryPopupState extends State<_SubscriptionManualEntryP
         : state.defaultAccountId ?? state.accounts.firstOrNull?.id;
   }
 
-  Future<void> _pickDate() async {
-    final picked = await pickDate(context, occurredOn);
-    if (picked == null || !mounted) return;
-    setState(() => occurredOn = DateTime(picked.year, picked.month, picked.day, occurredOn.hour, occurredOn.minute));
-  }
-
-  Future<void> _pickTime() async {
-    final picked = await pickTime(context, TimeOfDay.fromDateTime(occurredOn));
-    if (picked == null || !mounted) return;
-    setState(() => occurredOn = DateTime(occurredOn.year, occurredOn.month, occurredOn.day, picked.hour, picked.minute));
+  Future<void> _pickDateTime() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final selected = await showSingleDateTimeConfiguration(context, initial: occurredOn);
+    if (selected != null && mounted) setState(() => occurredOn = selected);
   }
 
   @override
@@ -17311,24 +17281,12 @@ class _SubscriptionManualEntryPopupState extends State<_SubscriptionManualEntryP
             },
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pickDate,
-                  icon: const Icon(Icons.calendar_month_rounded),
-                  label: Text(DateFormat('MMM d, yyyy').format(occurredOn)),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pickTime,
-                  icon: const Icon(Icons.schedule_rounded),
-                  label: Text(DateFormat('h:mm a').format(occurredOn)),
-                ),
-              ),
-            ],
+          _ConfigurationButton(
+            onPressed: _pickDateTime,
+            icon: Icons.event_rounded,
+            title: 'Time • Date',
+            summary: _configurationDateTimeSummary(
+              DateFormat('MMM d, yyyy').format(occurredOn), DateFormat('h:mm a').format(occurredOn)),
           ),
           const SizedBox(height: 18),
           FilledButton.icon(
@@ -17462,22 +17420,10 @@ class _SubscriptionEditorState extends State<SubscriptionEditor> {
     super.dispose();
   }
 
-  Future<void> _pickDueDate() async {
+  Future<void> _pickDueDateTime() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    final picked = await pickDate(context, dueAt);
-    if (picked == null || !mounted) return;
-    setState(() {
-      dueAt = DateTime(picked.year, picked.month, picked.day, dueAt.hour, dueAt.minute);
-    });
-  }
-
-  Future<void> _pickDueTime() async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    final picked = await pickTime(context, TimeOfDay.fromDateTime(dueAt));
-    if (picked == null || !mounted) return;
-    setState(() {
-      dueAt = DateTime(dueAt.year, dueAt.month, dueAt.day, picked.hour, picked.minute);
-    });
+    final selected = await showSingleDateTimeConfiguration(context, initial: dueAt);
+    if (selected != null && mounted) setState(() => dueAt = selected);
   }
 
   Future<void> _delete() async {
@@ -17630,45 +17576,29 @@ class _SubscriptionEditorState extends State<SubscriptionEditor> {
             },
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pickDueDate,
-                  icon: const Icon(Icons.calendar_month_rounded),
-                  label: Text(DateFormat('MMM d, yyyy').format(dueAt)),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pickDueTime,
-                  icon: const Icon(Icons.schedule_rounded),
-                  label: Text(DateFormat('h:mm a').format(dueAt)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: saving
-                ? null
-                : () async {
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: _ConfigurationButton(
+                  onPressed: saving ? null : _pickDueDateTime,
+                  icon: Icons.event_rounded,
+                  title: 'Time • Date',
+                  summary: _configurationDateTimeSummary(
+                    DateFormat('MMM d, yyyy').format(dueAt), DateFormat('h:mm a').format(dueAt)),
+                )),
+                const SizedBox(width: 8),
+                Expanded(child: _ConfigurationButton(
+                  onPressed: saving ? null : () async {
                     FocusManager.instance.primaryFocus?.unfocus();
                     final selected = await showSubscriptionFrequencyPopup(context, frequency);
                     if (selected != null && mounted) setState(() => frequency = selected);
                   },
-            child: InputDecorator(
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.repeat_rounded),
-                labelText: 'Repeat',
-                suffixIcon: Icon(Icons.keyboard_arrow_down_rounded),
-              ),
-              child: Text(
-                subscriptionFrequencyLabel(frequency),
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w800),
-              ),
+                  icon: Icons.repeat_rounded,
+                  title: 'Repeat',
+                  summary: subscriptionFrequencyLabel(frequency),
+                )),
+              ],
             ),
           ),
           const SizedBox(height: 10),
@@ -18767,6 +18697,68 @@ class _ServiceChargePreviewRow extends StatelessWidget {
   }
 }
 
+String _configurationDateTimeSummary(String date, String time) =>
+    '$date\n${time.replaceAll(' AM', '\u00a0AM').replaceAll(' PM', '\u00a0PM')}';
+
+Future<DateTime?> showSingleDateTimeConfiguration(BuildContext context, {required DateTime initial}) {
+  var working = initial;
+  return showYutakaPopup<DateTime>(
+    context,
+    maxWidth: 470,
+    maxHeight: 430,
+    child: StatefulBuilder(builder: (dialogContext, setModalState) => CompactPopupContent(
+      title: 'Time • Date',
+      actions: Row(children: [
+        Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel'))),
+        const SizedBox(width: 8),
+        Expanded(child: FilledButton(onPressed: () => Navigator.pop(dialogContext, working), child: const Text('Done'))),
+      ]),
+      child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        OutlinedButton.icon(
+          key: const ValueKey('single-date-choice'),
+          onPressed: () async {
+            final selected = await pickDate(dialogContext, working);
+            if (selected == null || !dialogContext.mounted) return;
+            setModalState(() => working = DateTime(selected.year, selected.month, selected.day, working.hour, working.minute));
+          },
+          icon: const Icon(Icons.calendar_today_rounded),
+          label: Text(DateFormat('MMM d, yyyy').format(working)),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          key: const ValueKey('single-time-choice'),
+          onPressed: () async {
+            final selected = await pickTime(dialogContext, TimeOfDay.fromDateTime(working));
+            if (selected == null || !dialogContext.mounted) return;
+            setModalState(() => working = DateTime(working.year, working.month, working.day, selected.hour, selected.minute));
+          },
+          icon: const Icon(Icons.schedule_rounded),
+          label: Text(DateFormat('h:mm a').format(working)),
+        ),
+      ])),
+    )),
+  );
+}
+
+class _ConfigurationButton extends StatelessWidget {
+  const _ConfigurationButton({required this.icon, required this.title, required this.summary, required this.onPressed});
+  final IconData icon;
+  final String title;
+  final String summary;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton(
+    style: OutlinedButton.styleFrom(
+      alignment: Alignment.topCenter,
+      minimumSize: const Size(48, 48),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+    ),
+    onPressed: onPressed,
+    child: _ConfigurationButtonLabel(icon: icon, title: title, summary: summary),
+  );
+}
+
 class _ConfigurationButtonLabel extends StatelessWidget {
   const _ConfigurationButtonLabel({required this.icon, required this.title, required this.summary});
 
@@ -19251,7 +19243,7 @@ class _TransactionEditorState extends State<TransactionEditor> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
-                  child: OutlinedButton(
+                  child: _ConfigurationButton(
                     onPressed: () async {
                       _dismissAmountFocus();
                       final selection = await showTransactionDateTimeConfiguration(
@@ -19269,16 +19261,16 @@ class _TransactionEditorState extends State<TransactionEditor> {
                         timeRangeEnabled = selection.timeRangeEnabled;
                       });
                     },
-                    child: _ConfigurationButtonLabel(
-                      icon: Icons.event_rounded,
-                      title: 'Time • Date',
-                      summary: '${transactionDateSpanLabel(selectedDate, dateRangeEnabled ? selectedEndDate : selectedDate)} • ${transactionTimeSpanLabel(selectedDate, selectedEndDate, forceRange: timeRangeEnabled)}',
-                    ),
+                    icon: Icons.event_rounded,
+                    title: 'Time • Date',
+                    summary: _configurationDateTimeSummary(
+                      transactionDateSpanLabel(selectedDate, dateRangeEnabled ? selectedEndDate : selectedDate),
+                      transactionTimeSpanLabel(selectedDate, selectedEndDate, forceRange: timeRangeEnabled)),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: OutlinedButton(
+                  child: _ConfigurationButton(
                     onPressed: isLoanTransaction
                         ? null
                         : () async {
@@ -19299,11 +19291,9 @@ class _TransactionEditorState extends State<TransactionEditor> {
                               serviceChargeValue = selection.value;
                             });
                           },
-                    child: _ConfigurationButtonLabel(
-                      icon: Icons.receipt_long_rounded,
-                      title: 'Service charge',
-                      summary: _serviceChargeSummary(state),
-                    ),
+                    icon: Icons.receipt_long_rounded,
+                    title: 'Service charge',
+                    summary: _serviceChargeSummary(state),
                   ),
                 ),
               ],
