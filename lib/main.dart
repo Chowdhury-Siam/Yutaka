@@ -9312,6 +9312,7 @@ class PageScaffold extends StatelessWidget {
     this.subtitle,
     this.floatingActionButton,
     this.titleTrailing,
+    this.compactHeader = false,
   });
   final String title;
   final String? subtitle;
@@ -9319,6 +9320,7 @@ class PageScaffold extends StatelessWidget {
   final Widget child;
   final Widget? floatingActionButton;
   final Widget? titleTrailing;
+  final bool compactHeader;
 
   @override
   Widget build(BuildContext context) {
@@ -9329,8 +9331,10 @@ class PageScaffold extends StatelessWidget {
       child: Scaffold(
         backgroundColor: scheme.background,
         appBar: AppBar(
-          toolbarHeight: desktop ? 70 : small ? 68 : 76,
-          titleSpacing: small ? 12 : 18,
+          toolbarHeight: compactHeader
+              ? math.max(56.0, MediaQuery.textScalerOf(context).scale(22) * 1.2 + 16)
+              : desktop ? 70 : small ? 68 : 76,
+          titleSpacing: compactHeader || small ? 12 : 18,
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -9343,7 +9347,7 @@ class PageScaffold extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(fontSize: desktop ? 26 : small ? 23 : 27),
+                      style: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(fontSize: compactHeader ? 22 : desktop ? 26 : small ? 23 : 27),
                     ),
                   ),
                   if (titleTrailing != null) ...[
@@ -9361,7 +9365,7 @@ class PageScaffold extends StatelessWidget {
           ),
           actions: actions
               .map((action) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
+                    padding: EdgeInsets.only(right: compactHeader ? 4 : 8),
                     child: action,
                   ))
               .toList(),
@@ -17792,6 +17796,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
 
     return PageScaffold(
       title: 'Transaction',
+      compactHeader: true,
       titleTrailing: const AmountVisibilityToggle(size: 18, padding: EdgeInsets.all(3)),
       actions: [
         if (hasDateFilter)
@@ -17831,33 +17836,39 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
       ],
       child: ResponsiveListContent(
         header: [
-          TextField(key: const ValueKey('transaction-search'), controller: search,
-            contextMenuBuilder: yutakaTextFieldContextMenu,
-            enableInteractiveSelection: true,
-            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(hintText: 'Search title, amount, account, category or person',
-              prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: search.text.isEmpty ? null : IconButton(tooltip: 'Clear search',
-                  onPressed: () => setState(search.clear), icon: const Icon(Icons.close_rounded))),
-          ),
-          Wrap(spacing: 8, children: [
-            TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TransactionShortcutsScreen())),
-                icon: const Icon(Icons.bolt_rounded), label: const Text('Shortcuts')),
-            TextButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecentlyDeletedTransactionsScreen())),
-                icon: const Icon(Icons.restore_from_trash_rounded), label: const Text('Recently deleted')),
+          Row(children: [
+            Expanded(child: TextField(key: const ValueKey('transaction-search'), controller: search,
+              contextMenuBuilder: yutakaTextFieldContextMenu,
+              enableInteractiveSelection: true,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              onChanged: (_) => setState(() {}),
+              style: Theme.of(context).textTheme.bodyMedium,
+              decoration: InputDecoration(hintText: 'Search transactions', isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                suffixIcon: search.text.isEmpty ? null : IconButton(tooltip: 'Clear search',
+                    onPressed: () => setState(search.clear), icon: const Icon(Icons.close_rounded, size: 20))),
+            )),
+            const SizedBox(width: 6),
+            IconButton(tooltip: 'Shortcuts', icon: const Icon(Icons.bolt_rounded, size: 20),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TransactionShortcutsScreen()))),
+            const SizedBox(width: 4),
+            IconButton(tooltip: 'Recently deleted', icon: const Icon(Icons.restore_from_trash_rounded, size: 20),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecentlyDeletedTransactionsScreen()))),
           ]),
           Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Text(
+            padding: const EdgeInsets.only(top: 6, bottom: 8),
+            child: Tooltip(message: subtitle, child: Text(
               subtitle,
               key: const ValueKey('transaction-summary'),
-              softWrap: true,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
               ),
-            ),
+            )),
           ),
           ActiveFilterChips(state: state),
         ],
