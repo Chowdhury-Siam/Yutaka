@@ -10047,14 +10047,14 @@ Future<String?> showAppleWheelSelectionSheet(
       CategoryType.values.any((type) => enumName(type) == options.first.subtitle) &&
       options.every((option) => option.subtitle == options.first.subtitle);
   final showSubtitles = !repeatedCategoryType;
+  final hasAddAction = onAdd != null && addActionLabel != null && addActionLabel.trim().isNotEmpty;
   final rowExtent = MediaQuery.textScalerOf(context).scale(14) > 18 ? 76.0 : 56.0;
-  final listHeight = math.min(360.0, math.max(56.0, options.length * rowExtent));
+  final listHeight = math.min(360.0, math.max(56.0, (options.length + (hasAddAction ? 1 : 0)) * rowExtent));
   final initialOffset = math.min(
     math.max(0.0, options.length * rowExtent - listHeight),
     math.max(0.0, (initialIndex - 1) * rowExtent),
   );
   final listController = ScrollController(initialScrollOffset: initialOffset);
-  final hasAddAction = onAdd != null && addActionLabel != null && addActionLabel.trim().isNotEmpty;
 
   final result = await showYutakaPopup<String>(
     context,
@@ -10065,62 +10065,62 @@ Future<String?> showAppleWheelSelectionSheet(
         final safeIndex = options.isEmpty ? -1 : selectedIndex.clamp(0, options.length - 1).toInt();
         return CompactPopupContent(
           title: title,
-          actions: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (hasAddAction) ...[
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(dialogContext, _selectionAddActionResult),
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: Text(addActionLabel),
-                ),
-                const SizedBox(height: 8),
-              ],
-              Row(children: [
-                Expanded(child: OutlinedButton(
-                  onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel'))),
-                const SizedBox(width: 8),
-                Expanded(flex: 2, child: FilledButton(
-                  onPressed: safeIndex < 0 ? null : () => Navigator.pop(
-                    dialogContext, options[selectedIndex.clamp(0, options.length - 1).toInt()].id),
-                  child: const Text('Done'))),
-              ]),
-            ],
-          ),
+          actions: Row(children: [
+            Expanded(child: OutlinedButton(
+              onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel'))),
+            const SizedBox(width: 8),
+            Expanded(child: FilledButton(
+              onPressed: safeIndex < 0 ? null : () => Navigator.pop(
+                dialogContext, options[selectedIndex.clamp(0, options.length - 1).toInt()].id),
+              child: const Text('Done'))),
+          ]),
           child: ConstrainedBox(
             constraints: BoxConstraints(maxHeight: listHeight),
-            child: options.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 20),
-                    child: Text('Nothing here yet. Add one to continue.',
-                      style: Theme.of(dialogContext).textTheme.bodyMedium),
-                  )
-                : Scrollbar(
-                    controller: listController,
-                    child: ListView.builder(
-                      controller: listController,
-                      shrinkWrap: true,
-                      padding: EdgeInsets.zero,
-                      physics: optimizedScrollPhysics(dialogContext),
-                      itemCount: options.length,
-                      itemBuilder: (context, index) {
-                        final isSelected = index == safeIndex;
-                        return Semantics(
-                          selected: isSelected,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: MotionInkWell(
-                              borderRadius: BorderRadius.circular(14),
-                              onTap: () => setModalState(() => selectedIndex = index),
-                              child: _AppleWheelOptionRow(
-                                option: options[index], selected: isSelected, showSubtitle: showSubtitles),
-                            ),
-                          ),
-                        );
-                      },
+            child: Scrollbar(
+              controller: listController,
+              child: ListView.builder(
+                controller: listController,
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                physics: optimizedScrollPhysics(dialogContext),
+                itemCount: options.length + (hasAddAction ? 1 : 0) + (options.isEmpty ? 1 : 0),
+                itemBuilder: (context, index) {
+                  // Secondary creation stays reachable without consuming
+                  // the pinned footer's height at large text sizes.
+                  if (hasAddAction && index == 0) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.pop(dialogContext, _selectionAddActionResult),
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: Text(addActionLabel),
+                      ),
+                    );
+                  }
+                  if (options.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Text('Nothing here yet. Add one to continue.',
+                        style: Theme.of(dialogContext).textTheme.bodyMedium),
+                    );
+                  }
+                  final optionIndex = index - (hasAddAction ? 1 : 0);
+                  final isSelected = optionIndex == safeIndex;
+                  return Semantics(
+                    selected: isSelected,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: MotionInkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => setModalState(() => selectedIndex = optionIndex),
+                        child: _AppleWheelOptionRow(
+                          option: options[optionIndex], selected: isSelected, showSubtitle: showSubtitles),
+                      ),
                     ),
-                  ),
+                  );
+                },
+              ),
+            ),
           ),
         );
       },
@@ -11808,7 +11808,7 @@ class CompactPopupContent extends StatelessWidget {
           children: [
             Row(children: [
               Expanded(child: Semantics(namesRoute: true, header: true, child: Text(title,
-                style: theme.textTheme.titleMedium?.copyWith(fontSize: 18, fontWeight: FontWeight.w700)))),
+                style: theme.textTheme.titleMedium?.copyWith(fontSize: 18, height: 1.2, fontWeight: FontWeight.w700)))),
               IconButton(
                 tooltip: 'Close',
                 style: IconButton.styleFrom(backgroundColor: Colors.transparent, minimumSize: const Size(48, 48)),
