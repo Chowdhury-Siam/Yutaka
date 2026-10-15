@@ -1,5 +1,6 @@
 ## 1.0.1327+371
 
+- Remove obsolete Repeat-picker border implementation checks after adopting shared selection cards. Retain recurrence, persistence, manual-entry and scheduler checks, plus widget coverage for every recurrence choice and cancellation. This test-only correction keeps release versions unchanged.
 - Apply a shared slim, rounded scrollbar style across the app, including account, category, date and currency selection lists. Use a subdued theme-aware thumb with no visible track and more visible hover/drag states.
 - Retain native scrolling, scrollbar dragging, fade animation, list behavior, blur and all previous fixes. Keep Worker version 1.0.1305 unchanged.
 
