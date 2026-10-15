@@ -32,11 +32,9 @@ void main() {
   }
 
   Future<void> choosePeriod(WidgetTester tester, String label) async {
-    final dropdown = find.byType(DropdownButtonFormField<LoanInterestPeriod>);
-    await tester.ensureVisible(dropdown);
-    await tester.tap(dropdown);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(label).last);
+    final choice = find.widgetWithText(ChoiceChip, label);
+    await tester.ensureVisible(choice);
+    await tester.tap(choice);
     await tester.pumpAndSettle();
   }
 
@@ -72,7 +70,7 @@ void main() {
     await open(tester, type: LoanInterestType.compound, period: LoanInterestPeriod.monthly, rate: 12);
     await tester.tap(find.text('Simple interest'));
     await tester.pumpAndSettle();
-    expect(find.text('Daily, using a yearly rate'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'Daily accrual'), findsOneWidget);
     await save(tester);
     expect(saved!.period, LoanInterestPeriod.yearly);
     expect(saved!.rate, 12);
@@ -113,6 +111,7 @@ void main() {
     expect(find.text('5'), findsOneWidget);
     await tester.enterText(find.byType(TextFormField), 'bad');
     await save(tester);
+    await tester.ensureVisible(find.text('No interest'));
     await tester.tap(find.text('No interest'));
     await tester.pumpAndSettle();
     await save(tester);
@@ -124,11 +123,13 @@ void main() {
     await open(tester, type: LoanInterestType.compound, rate: 12,
       size: const Size(320, 568), scale: 1.5);
     expect(tester.getSize(find.widgetWithText(FilledButton, 'Save interest')).height, greaterThanOrEqualTo(48));
+    await choosePeriod(tester, 'Daily');
     final field = find.byType(TextFormField);
     await tester.ensureVisible(field);
     await tester.enterText(field, '14');
     await save(tester);
     expect(saved!.rate, 14);
+    expect(saved!.period, LoanInterestPeriod.daily);
   });
 
   testWidgets('close cancels edits', (tester) async {
@@ -140,6 +141,27 @@ void main() {
     expect(find.text('Loan interest'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  for (final type in [LoanInterestType.simple, LoanInterestType.compound]) {
+    testWidgets('${type.name} choices stay inside the dialog and above Save', (tester) async {
+      await open(tester, type: type, rate: 10, size: const Size(1272, 723));
+      final saveRect = tester.getRect(find.widgetWithText(FilledButton, 'Save interest'));
+      final fieldRect = tester.getRect(find.byType(TextFormField));
+      for (final choice in find.byType(ChoiceChip).evaluate()) {
+        final rect = tester.getRect(find.byWidget(choice.widget));
+        expect(rect.left, greaterThanOrEqualTo(saveRect.left));
+        expect(rect.right, lessThanOrEqualTo(saveRect.right));
+        expect(rect.bottom, lessThan(fieldRect.top));
+        expect(rect.bottom, lessThan(saveRect.top));
+      }
+      expect(find.byType(ChoiceChip), findsNWidgets(type == LoanInterestType.simple ? 2 : 4));
+      await choosePeriod(tester, 'One-time total');
+      expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'One-time total')).selected, isTrue);
+      await save(tester);
+      expect(saved!.period, LoanInterestPeriod.flat);
+      expect(saved!.rate, 10);
+    });
+  }
 
   testWidgets('loan form shows the saved settings without rounding the rate', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1000));
