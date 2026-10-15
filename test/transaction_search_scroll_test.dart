@@ -58,6 +58,10 @@ void main() {
         final rowTop = tester.getTopLeft(firstRow).dy;
 
         final pull = await tester.startGesture(tester.getCenter(list));
+        // Cross touch slop to claim the drag, then send an update while the
+        // finger is still down. DragStartBehavior.start consumes the first move.
+        await pull.moveBy(const Offset(0, 40));
+        await tester.pump();
         await pull.moveBy(const Offset(0, 160));
         await tester.pump();
         expect(position.pixels, lessThan(0));
