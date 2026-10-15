@@ -81,6 +81,14 @@ void main() {
         if (dialog.key != 'Sort transactions') {
           expect(find.text(footer).hitTestable(), findsOneWidget);
         }
+        if (dialog.key == 'Choose Category') {
+          // Creation scrolls with the choices; confirmation remains pinned.
+          expect(find.text('Add category').hitTestable(), findsOneWidget);
+          final list = find.descendant(of: find.byType(CompactPopupContent), matching: find.byType(Scrollable));
+          await tester.scrollUntilVisible(find.text('Category 29'), 180, scrollable: list);
+          expect(find.text('Done').hitTestable(), findsOneWidget);
+          expect(find.text('Cancel').hitTestable(), findsOneWidget);
+        }
         expect(tester.takeException(), isNull, reason: '${dialog.key}, $brightness, 2x text');
         await tester.tap(find.byTooltip('Close'));
         await tester.pumpAndSettle();
