@@ -62,6 +62,8 @@ You do not need to write Cloudflare or Turso code yourself.
 
 ### 2.3 App experience
 
+Design requirement: keep Yutaka compact by default. Favor short toolbars, grouped actions, and minimal padding and repeated text while preserving usable touch targets and support for larger text.
+
 - Material 3 design
 - Light, dark, and system themes
 - Adaptive Android, Windows, Linux, and macOS layouts
@@ -717,7 +719,7 @@ Yutaka has separate Android distribution flavors so Play Store installs never us
 flutter build appbundle --release --flavor play \
   --no-tree-shake-icons \
   --dart-define=YUTAKA_ANDROID_DISTRIBUTION=play \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1306
+  --dart-define=YUTAKA_APP_VERSION=1.0.1308
 ```
 
 **Direct/GitHub APK** — keeps the GitHub APK updater for users who install outside Google Play:
@@ -726,7 +728,7 @@ flutter build appbundle --release --flavor play \
 flutter build apk --release --flavor direct \
   --no-tree-shake-icons \
   --dart-define=YUTAKA_ANDROID_DISTRIBUTION=direct \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1306
+  --dart-define=YUTAKA_APP_VERSION=1.0.1308
 ```
 
 After a successful direct Android update, Yutaka requests reopening and shows its update-success popup on launch. Android may block an app from opening itself from the background; when notifications are allowed, a quiet **Open Yutaka** completion notification provides a tap-to-open fallback. Cancelled or failed updates do not reopen the app, and Google Play builds continue using Play’s update flow.
@@ -740,7 +742,7 @@ flutter config --enable-windows-desktop
 flutter create --platforms=windows --project-name yutaka --no-pub .
 flutter pub get
 flutter build windows --release \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1306
+  --dart-define=YUTAKA_APP_VERSION=1.0.1308
 ```
 
 ## 10.5 Linux build
@@ -757,7 +759,7 @@ flutter config --enable-linux-desktop
 flutter create --platforms=linux --project-name yutaka --no-pub .
 flutter pub get
 flutter build linux --release \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1306
+  --dart-define=YUTAKA_APP_VERSION=1.0.1308
 ```
 
 The release workflow builds both **x64** and **ARM64** Linux packages on Ubuntu 22.04. The x64 runner uses the pinned Flutter SDK release directly; the ARM64 runner bootstraps the same pinned Flutter tag from source so it does not depend on missing prebuilt ARM64 SDK archive entries. Each architecture gets:
@@ -789,7 +791,7 @@ flutter config --enable-macos-desktop
 flutter create --platforms=macos --project-name yutaka --org com.yutaka --no-pub .
 flutter pub get
 flutter build macos --release \
-  --dart-define=YUTAKA_APP_VERSION=1.0.1306
+  --dart-define=YUTAKA_APP_VERSION=1.0.1308
 ```
 
 The release workflow builds one **universal macOS package** containing both **Apple Silicon (ARM64)** and **Intel (x64)** slices. GitHub Releases publish `Yutaka-v<version>-macos-universal.pkg` and a matching `.zip` containing `Yutaka.app`. CI runs on GitHub's Apple Silicon `macos-15` runner for faster Xcode/Flutter compilation, bootstraps the pinned Flutter `3.47.4` source tag into a reusable SDK cache, keeps Flutter's universal macOS mode enabled, verifies both architecture slices with `lipo`, and reuses CocoaPods plus incremental macOS build caches between releases. It also applies Yutaka's icon and `com.yutaka.siam` bundle identifier and enables network access plus user-selected file read/write access for sync, import, and backup workflows.
@@ -999,7 +1001,7 @@ Licensed under the GNU General Public License v3.0 (GPL-3.0). See [`LICENSE`](..
 
 ### Transaction search, shortcuts, splits, and recovery
 
-The Transaction page searches the current date range and filters by title, note, amount, account, category, date, and linked loan contact. Clear the search or change the date/filter controls to broaden results. Shortcuts opens saved transaction drafts; use Save shortcut in the editor after choosing the account and category. Save shortcut sits below the main Save button. Each use creates a fresh draft with today’s date and never moves money until Save. Shortcuts are backed up and synchronized as preferences; missing accounts or categories must be chosen again.
+The compact Transaction header places Shortcuts and Recently deleted icons beside Search, with record/filter/sort details on one line (hover or long-press for the full text). The Transaction page searches the current date range and filters by title, note, amount, account, category, date, and linked loan contact. Clear the search or change the date/filter controls to broaden results. Shortcuts opens saved transaction drafts; use Save shortcut in the editor after choosing the account and category. Save shortcut sits below the main Save button. Each use creates a fresh draft with today’s date and never moves money until Save. Shortcuts are backed up and synchronized as preferences; missing accounts or categories must be chosen again.
 
 Enter the total before tapping the split icon inside the Category field in an income or expense editor. Assign positive amounts to 2–20 categories whose sum equals the amount before fees. Budgets and reports allocate the posted amount, including proportional fees, across the selected categories.
 
