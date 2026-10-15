@@ -5,6 +5,15 @@ import 'package:yutaka/main.dart';
 import 'package:yutaka/models.dart';
 import 'package:yutaka/ui_foundation.dart';
 
+Future<void> settleScroll(WidgetTester tester, ScrollPosition position) async {
+  // Wait for the scroll spring, not the repeating empty-state animation.
+  for (var frame = 0; frame < 240 && position.isScrollingNotifier.value; frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(position.isScrollingNotifier.value, isFalse, reason: 'The list should finish scrolling');
+  await tester.pump();
+}
+
 void main() {
   for (final scale in [1.0, 2.0]) {
     testWidgets('transaction controls stay fixed during pull and scroll at text scale $scale', (tester) async {
@@ -33,7 +42,9 @@ void main() {
             home: TransactionListScreen(key: ValueKey(count)),
           ),
         ));
-        await tester.pumpAndSettle();
+        // Empty history deliberately keeps animating, so the whole widget tree
+        // never settles. Render its layout without waiting for idle tickers.
+        await tester.pump();
         final search = find.byKey(const ValueKey('transaction-search'));
         final summary = find.byKey(const ValueKey('transaction-summary'));
         final shortcuts = find.byTooltip('Shortcuts');
@@ -55,21 +66,24 @@ void main() {
           expect(tester.getTopLeft(controls[i]), positions[i]);
         }
         await pull.up();
-        await tester.pumpAndSettle();
+        await settleScroll(tester, position);
+        expect(position.pixels, closeTo(0, 1));
 
         if (count > 0) {
           await tester.drag(list, const Offset(0, -180));
-          await tester.pumpAndSettle();
+          await settleScroll(tester, position);
           expect(position.pixels, greaterThan(0));
           for (var i = 0; i < controls.length; i++) {
             expect(tester.getTopLeft(controls[i]), positions[i]);
           }
           await tester.enterText(search, 'not a matching title');
-          await tester.pumpAndSettle();
+          await tester.pump();
+          await settleScroll(tester, position);
           expect(find.text('No search matches'), findsOneWidget);
           expect(summary.hitTestable(), findsOneWidget);
           await tester.tap(find.byTooltip('Clear search'));
-          await tester.pumpAndSettle();
+          await tester.pump();
+          await settleScroll(tester, position);
           expect(find.text('No search matches'), findsNothing);
         }
         expect(tester.takeException(), isNull);
