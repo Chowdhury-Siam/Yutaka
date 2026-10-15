@@ -1,3 +1,16 @@
+## 1.0.1308+352
+
+- Compact the Transaction header with a 56-pixel toolbar at default text size, a smaller title, closer toolbar actions, and a dense search field.
+- Place Shortcuts and Recently deleted icons beside Search instead of a separate text-button row. Keep record/date/sort details on one line with the full text available in a tooltip.
+- Preserve larger-text sizing, filters, sorting, date controls, search and shortcut access. Document compact layout as an ongoing design requirement and update the existing shortcut navigation test.
+- Update app metadata; keep Worker version 1.0.1305 unchanged.
+
+## 1.0.1307+351
+
+- Restyle Saved shortcuts with compact charcoal cards, green icon tiles, clearer titles and account labels, and consistent outlined Rename and Delete shortcut buttons.
+- Keep details and actions on one row where space allows; wrap the actions below the details on narrow screens or with large text. Remove excess card padding and shorten the page hint.
+- Update app metadata; keep Worker version 1.0.1305 unchanged.
+
 ## 1.0.1306+350
 
 - Move category/account split actions into their selection fields and active split cards. Use compact, labeled split icons with 48-pixel touch targets; keep the existing category/account selectors and split popups.
