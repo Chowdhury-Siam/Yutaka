@@ -7980,6 +7980,22 @@ class YutakaApp extends StatelessWidget {
       canvasColor: scheme.background,
       visualDensity: VisualDensity.standard,
       dividerColor: Colors.transparent,
+      scrollbarTheme: ScrollbarThemeData(
+        thickness: WidgetStateProperty.resolveWith((states) =>
+          states.contains(WidgetState.hovered) || states.contains(WidgetState.dragged) ? 5.0 : 3.0),
+        radius: const Radius.circular(8),
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.dragged)) return scheme.primary.withOpacity(.85);
+          if (states.contains(WidgetState.hovered)) return scheme.primary.withOpacity(.65);
+          return Color.lerp(scheme.onSurfaceVariant, scheme.primary, .25)!.withOpacity(.46);
+        }),
+        trackVisibility: const WidgetStatePropertyAll(false),
+        trackColor: const WidgetStatePropertyAll(Colors.transparent),
+        trackBorderColor: const WidgetStatePropertyAll(Colors.transparent),
+        crossAxisMargin: 3,
+        mainAxisMargin: 6,
+        minThumbLength: 28,
+      ),
       // One consistent desktop hover state layer for InkWell-based controls.
       // Individual widgets keep their own shape/customBorder, so the field
       // fills the complete interactive surface instead of stopping short.
@@ -17309,58 +17325,54 @@ Future<SubscriptionFrequency?> showSubscriptionFrequencyPopup(
   BuildContext context,
   SubscriptionFrequency selected,
 ) {
-  final scheme = Theme.of(context).colorScheme;
+  final largeText = MediaQuery.textScalerOf(context).scale(14) > 18;
+  final values = SubscriptionFrequency.values;
+  const icons = ['today', 'week', 'month', 'year'];
+  const colors = [kSleekAccentHex, '#A6E3A1', '#B4A5FF', '#FBC879'];
   return showYutakaPopup<SubscriptionFrequency>(
     context,
     maxWidth: 420,
     maxHeight: 430,
-    child: YutakaPopupContent(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Repeat',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-                ),
+    child: CompactPopupContent(
+      title: 'Repeat',
+      child: LayoutBuilder(builder: (dialogContext, constraints) {
+        final tiles = !largeText && constraints.maxWidth >= 260;
+        Widget choice(int index) => Semantics(
+          selected: values[index] == selected,
+          child: Material(color: Colors.transparent, child: MotionInkWell(
+            key: ValueKey('repeat-${values[index].name}'),
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => Navigator.pop(dialogContext, values[index]),
+            child: _SelectionOptionCard(
+              option: SelectionOption(
+                id: values[index].name,
+                title: subscriptionFrequencyLabel(values[index]),
+                subtitle: '', iconName: icons[index], iconColor: colors[index],
               ),
-              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          for (final value in SubscriptionFrequency.values) ...[
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-                side: BorderSide(
-                  color: value == selected
-                      ? kSleekAccent.withOpacity(.56)
-                      : scheme.outlineVariant.withOpacity(.34),
-                  width: value == selected ? 1.25 : 1,
-                ),
-              ),
-              tileColor: value == selected
-                  ? scheme.primary.withOpacity(.14)
-                  : scheme.surfaceContainerHighest.withOpacity(.34),
-              leading: Icon(
-                Icons.repeat_rounded,
-                color: value == selected ? Theme.of(context).colorScheme.primary : null,
-              ),
-              title: Text(
-                subscriptionFrequencyLabel(value),
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              trailing: value == selected ? const Icon(Icons.check_rounded, color: kSleekAccent) : null,
-              onTap: () => Navigator.pop(context, value),
+              selected: values[index] == selected,
+              tile: tiles,
             ),
-            if (value != SubscriptionFrequency.values.last) const SizedBox(height: 8),
+          )),
+        );
+        return SingleChildScrollView(child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var index = 0; index < values.length; index += tiles ? 2 : 1)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: tiles ? IntrinsicHeight(child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: choice(index)),
+                    const SizedBox(width: 8),
+                    Expanded(child: index + 1 < values.length ? choice(index + 1) : const SizedBox.shrink()),
+                  ],
+                )) : choice(index),
+              ),
           ],
-        ],
-      ),
+        ));
+      }),
     ),
   );
 }
@@ -18752,7 +18764,7 @@ class _ConfigurationButton extends StatelessWidget {
     style: OutlinedButton.styleFrom(
       alignment: Alignment.topCenter,
       minimumSize: const Size(48, 48),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
     ),
     onPressed: onPressed,
     child: _ConfigurationButtonLabel(icon: icon, title: title, summary: summary),
@@ -18768,6 +18780,12 @@ class _ConfigurationButtonLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final summaryStyle = theme.textTheme.bodySmall!.copyWith(
+      height: 1.3,
+      color: theme.colorScheme.onSurfaceVariant,
+      fontWeight: FontWeight.w500,
+    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -18776,17 +18794,17 @@ class _ConfigurationButtonLabel extends StatelessWidget {
           children: [
             Icon(icon, size: 18),
             const SizedBox(width: 8),
-            Flexible(child: Text(title, textAlign: TextAlign.center)),
+            Flexible(child: Text(title, textAlign: TextAlign.center,
+              style: TextStyle(fontSize: theme.textTheme.bodySmall?.fontSize, fontWeight: FontWeight.w700))),
           ],
         ),
-        const SizedBox(height: 3),
-        Text(
-          summary,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
-              ),
+        const SizedBox(height: 5),
+        ConstrainedBox(
+          // Reserve the same summary area for a date/time pair or a short status.
+          // A minimum (rather than a fixed height) lets ranges and large text grow.
+          constraints: BoxConstraints(minHeight:
+            MediaQuery.textScalerOf(context).scale(summaryStyle.fontSize!) * summaryStyle.height! * 2),
+          child: Center(child: Text(summary, textAlign: TextAlign.center, style: summaryStyle)),
         ),
       ],
     );
