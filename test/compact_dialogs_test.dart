@@ -92,10 +92,12 @@ void main() {
           expect(find.text(footer).hitTestable(), findsOneWidget);
         }
         if (dialog.key == 'Choose Category') {
-          // Creation scrolls with the choices; confirmation remains pinned.
-          expect(find.text('Add category').hitTestable(), findsOneWidget);
+          // Large text keeps creation at the end of the scrolling choices;
+          // confirmation remains pinned without an oversized fixed footer.
           final list = find.descendant(of: find.byKey(const ValueKey('choice-options-list')), matching: find.byType(Scrollable));
           await tester.scrollUntilVisible(find.text('Category 29'), 180, scrollable: list);
+          await tester.scrollUntilVisible(find.byKey(const ValueKey('choice-add-action')), 100, scrollable: list);
+          expect(find.text('Add category').hitTestable(), findsOneWidget);
           expect(find.text('Done').hitTestable(), findsOneWidget);
           expect(find.text('Cancel').hitTestable(), findsOneWidget);
         }
@@ -104,6 +106,33 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(CompactPopupContent), findsNothing);
       }
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('account and category creation stay below the choices beside confirmation actions', (tester) async {
+    for (final label in ['account', 'category']) {
+      String? result;
+      await host(tester, (context) async {
+        result = await showAppleWheelSelectionSheet(context,
+          title: label == 'account' ? 'Choose Account' : 'Choose Category',
+          options: choices, selectedId: choices.first.id,
+          addActionLabel: 'Add $label', onAdd: () async => 'created-$label');
+      });
+      final add = find.byKey(const ValueKey('choice-add-action'));
+      final list = find.byKey(const ValueKey('choice-options-list'));
+      final addTop = tester.getTopLeft(add).dy;
+      expect(addTop, greaterThanOrEqualTo(tester.getBottomLeft(list).dy));
+      expect(tester.getBottomLeft(add).dy, lessThanOrEqualTo(tester.getTopLeft(find.text('Done')).dy));
+      expect(find.descendant(of: list, matching: add), findsNothing);
+      final scrollable = find.descendant(of: list, matching: find.byType(Scrollable));
+      await tester.scrollUntilVisible(find.text('Category 29'), 180, scrollable: scrollable);
+      expect(tester.getTopLeft(add).dy, addTop);
+      expect(add.hitTestable(), findsOneWidget);
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      expect(result, 'created-$label');
+      expect(tester.takeException(), isNull);
     }
     await tester.pumpWidget(const SizedBox.shrink());
   });
