@@ -330,43 +330,46 @@ void main() {
   for (final splitAccounts in [false, true]) {
     testWidgets('${splitAccounts ? 'account' : 'category'} split shows allocation status and returns validated shares', (tester) async {
       final semantics = tester.ensureSemantics();
-      addTearDown(semantics.dispose);
-      await tester.binding.setSurfaceSize(const Size(360, 640));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      Map<String, double>? result;
-      await tester.pumpWidget(ChangeNotifierProvider<AppController>.value(
-        value: controller,
-        child: MaterialApp(home: Scaffold(body: Builder(builder: (context) => TextButton(
-          onPressed: () async {
-            result = await showTransactionSplits(context, type: MoneyTransactionType.expense,
-              total: 100, initial: {}, splitAccounts: splitAccounts);
-          },
-          child: const Text('Split'),
-        )))),
-      ));
-      await tester.tap(find.text('Split'));
-      await tester.pumpAndSettle();
-      final ids = splitAccounts ? ['cash', 'bank'] : controller.categories
-          .where((c) => c.type == CategoryType.expense).take(2).map((c) => c.id).toList();
-      final first = find.byKey(ValueKey('split-amount-${ids[0]}'));
-      final second = find.byKey(ValueKey('split-amount-${ids[1]}'));
-      await tester.enterText(first, '60');
-      await tester.enterText(second, '50');
-      await tester.pump();
-      expect(find.text('Over by ${controller.format(10)}'), findsOneWidget);
-      await tester.tap(find.text('Done'));
-      await tester.pump();
-      expect(result, isNull);
-      expect(find.text('Use 2–20 ${splitAccounts ? 'accounts' : 'categories'} whose amounts equal the total.'), findsOneWidget);
-      await tester.enterText(second, '40');
-      await tester.pump();
-      expect(find.text('Fully allocated'), findsOneWidget);
-      await tester.tap(find.text('Done'));
-      await tester.pumpAndSettle();
-      expect(result, {ids[0]: 60.0, ids[1]: 40.0});
-      expect(controller.transactions, isEmpty);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      try {
+        await tester.binding.setSurfaceSize(const Size(360, 640));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        Map<String, double>? result;
+        await tester.pumpWidget(ChangeNotifierProvider<AppController>.value(
+          value: controller,
+          child: MaterialApp(home: Scaffold(body: Builder(builder: (context) => TextButton(
+            onPressed: () async {
+              result = await showTransactionSplits(context, type: MoneyTransactionType.expense,
+                total: 100, initial: {}, splitAccounts: splitAccounts);
+            },
+            child: const Text('Split'),
+          )))),
+        ));
+        await tester.tap(find.text('Split'));
+        await tester.pumpAndSettle();
+        final ids = splitAccounts ? ['cash', 'bank'] : controller.categories
+            .where((c) => c.type == CategoryType.expense).take(2).map((c) => c.id).toList();
+        final first = find.byKey(ValueKey('split-amount-${ids[0]}'));
+        final second = find.byKey(ValueKey('split-amount-${ids[1]}'));
+        await tester.enterText(first, '60');
+        await tester.enterText(second, '50');
+        await tester.pump();
+        expect(find.text('Over by ${controller.format(10)}'), findsOneWidget);
+        await tester.tap(find.text('Done'));
+        await tester.pump();
+        expect(result, isNull);
+        expect(find.text('Use 2–20 ${splitAccounts ? 'accounts' : 'categories'} whose amounts equal the total.'), findsOneWidget);
+        await tester.enterText(second, '40');
+        await tester.pump();
+        expect(find.text('Fully allocated'), findsOneWidget);
+        await tester.tap(find.text('Done'));
+        await tester.pumpAndSettle();
+        expect(result, {ids[0]: 60.0, ids[1]: 40.0});
+        expect(controller.transactions, isEmpty);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      } finally {
+        semantics.dispose();
+      }
     });
   }
 
