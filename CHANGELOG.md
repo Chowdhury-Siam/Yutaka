@@ -1,3 +1,10 @@
+## 1.0.1309+353
+
+- Refresh the calculator with a larger readout, balanced spacing, softer keys, and clearer operator colors in both themes.
+- Explain loan interest types, show timing choices in a menu, clarify yearly and one-time rates, and display saved interest settings in the loan form.
+- Validate rates inline, preserve rate precision while editing, and support scrolling with large text on small screens.
+- Update app release metadata and regression coverage; keep Worker version 1.0.1305 unchanged.
+
 ## 1.0.1308+352
 
 - Compact the Transaction header with a 56-pixel toolbar at default text size, a smaller title, closer toolbar actions, and a dense search field.
