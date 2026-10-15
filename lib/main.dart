@@ -19246,56 +19246,67 @@ class _TransactionEditorState extends State<TransactionEditor> {
             ),
           ],
           const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: () async {
-              _dismissAmountFocus();
-              final selection = await showTransactionDateTimeConfiguration(
-                context,
-                start: selectedDate,
-                end: selectedEndDate,
-                dateRangeEnabled: dateRangeEnabled,
-                timeRangeEnabled: timeRangeEnabled,
-              );
-              if (!mounted || selection == null) return;
-              setState(() {
-                selectedDate = selection.start;
-                selectedEndDate = selection.end;
-                dateRangeEnabled = selection.dateRangeEnabled;
-                timeRangeEnabled = selection.timeRangeEnabled;
-              });
-            },
-            child: _ConfigurationButtonLabel(
-              icon: Icons.event_rounded,
-              title: 'Time • Date',
-              summary: '${transactionDateSpanLabel(selectedDate, dateRangeEnabled ? selectedEndDate : selectedDate)} • ${transactionTimeSpanLabel(selectedDate, selectedEndDate, forceRange: timeRangeEnabled)}',
-            ),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: isLoanTransaction
-                ? null
-                : () async {
-                    _dismissAmountFocus();
-                    final baseValue = double.tryParse(amount.text.trim()) ?? 0;
-                    final selection = await showServiceChargeConfiguration(
-                      context,
-                      baseAmount: baseValue,
-                      transactionType: type,
-                      enabled: serviceChargeEnabled,
-                      mode: serviceChargeMode,
-                      value: serviceChargeValue,
-                    );
-                    if (!mounted || selection == null) return;
-                    setState(() {
-                      serviceChargeEnabled = selection.enabled;
-                      serviceChargeMode = selection.mode;
-                      serviceChargeValue = selection.value;
-                    });
-                  },
-            child: _ConfigurationButtonLabel(
-              icon: Icons.receipt_long_rounded,
-              title: 'Service charge',
-              summary: _serviceChargeSummary(state),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      _dismissAmountFocus();
+                      final selection = await showTransactionDateTimeConfiguration(
+                        context,
+                        start: selectedDate,
+                        end: selectedEndDate,
+                        dateRangeEnabled: dateRangeEnabled,
+                        timeRangeEnabled: timeRangeEnabled,
+                      );
+                      if (!mounted || selection == null) return;
+                      setState(() {
+                        selectedDate = selection.start;
+                        selectedEndDate = selection.end;
+                        dateRangeEnabled = selection.dateRangeEnabled;
+                        timeRangeEnabled = selection.timeRangeEnabled;
+                      });
+                    },
+                    child: _ConfigurationButtonLabel(
+                      icon: Icons.event_rounded,
+                      title: 'Time • Date',
+                      summary: '${transactionDateSpanLabel(selectedDate, dateRangeEnabled ? selectedEndDate : selectedDate)} • ${transactionTimeSpanLabel(selectedDate, selectedEndDate, forceRange: timeRangeEnabled)}',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: isLoanTransaction
+                        ? null
+                        : () async {
+                            _dismissAmountFocus();
+                            final baseValue = double.tryParse(amount.text.trim()) ?? 0;
+                            final selection = await showServiceChargeConfiguration(
+                              context,
+                              baseAmount: baseValue,
+                              transactionType: type,
+                              enabled: serviceChargeEnabled,
+                              mode: serviceChargeMode,
+                              value: serviceChargeValue,
+                            );
+                            if (!mounted || selection == null) return;
+                            setState(() {
+                              serviceChargeEnabled = selection.enabled;
+                              serviceChargeMode = selection.mode;
+                              serviceChargeValue = selection.value;
+                            });
+                          },
+                    child: _ConfigurationButtonLabel(
+                      icon: Icons.receipt_long_rounded,
+                      title: 'Service charge',
+                      summary: _serviceChargeSummary(state),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
