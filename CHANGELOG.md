@@ -1,3 +1,9 @@
+## 1.0.1310+354
+
+- Fix the release checks to count both TextField and TextFormField, including outside-tap dismissal and adaptive text selection.
+- Keep fixed-layout checks on loan and repayment notes while covering the interest dialog's bounded scrolling separately.
+- Explicitly retain interactive text selection in the interest rate field. Update app release metadata; keep Worker version 1.0.1305 unchanged.
+
 ## 1.0.1309+353
 
 - Refresh the calculator with a larger readout, balanced spacing, softer keys, and clearer operator colors in both themes.
