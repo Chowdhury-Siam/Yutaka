@@ -30,82 +30,9 @@ class LoanInterestConfiguration {
 Future<LoanStartDateTimeConfiguration?> showLoanStartDateTimeConfiguration(
   BuildContext context, {
   required DateTime start,
-}) {
-  var workingStart = start;
-
-  return showYutakaPopup<LoanStartDateTimeConfiguration>(
-    context,
-    maxWidth: 470,
-    maxHeight: 430,
-    child: StatefulBuilder(
-      builder: (dialogContext, setModalState) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
-          child: YutakaPopupContent(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Time • Date',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 18),
-                Text('Start date', style: Theme.of(dialogContext).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 7),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final selected = await pickDate(dialogContext, workingStart);
-                    if (selected == null || !dialogContext.mounted) return;
-                    setModalState(() {
-                      workingStart = DateTime(
-                        selected.year,
-                        selected.month,
-                        selected.day,
-                        workingStart.hour,
-                        workingStart.minute,
-                      );
-                    });
-                  },
-                  icon: const Icon(Icons.calendar_today_rounded),
-                  label: Text(DateFormat('MMM d, yyyy').format(workingStart)),
-                ),
-                const SizedBox(height: 14),
-                Text('Start time', style: Theme.of(dialogContext).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w900)),
-                const SizedBox(height: 7),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final selected = await pickTime(dialogContext, TimeOfDay.fromDateTime(workingStart));
-                    if (selected == null || !dialogContext.mounted) return;
-                    setModalState(() {
-                      workingStart = DateTime(
-                        workingStart.year,
-                        workingStart.month,
-                        workingStart.day,
-                        selected.hour,
-                        selected.minute,
-                      );
-                    });
-                  },
-                  icon: const Icon(Icons.schedule_rounded),
-                  label: Text(DateFormat('h:mm a').format(workingStart)),
-                ),
-                const SizedBox(height: 18),
-                FilledButton(
-                  onPressed: () => Navigator.pop(
-                    dialogContext,
-                    LoanStartDateTimeConfiguration(start: workingStart),
-                  ),
-                  child: const Text('Done'),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    ),
-  );
+}) async {
+  final selected = await showSingleDateTimeConfiguration(context, initial: start);
+  return selected == null ? null : LoanStartDateTimeConfiguration(start: selected);
 }
 
 Future<LoanDueDateTimeConfiguration?> showLoanDueDateTimeConfiguration(
@@ -708,49 +635,57 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
             ),
           ],
           const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: () async {
-              FocusManager.instance.primaryFocus?.unfocus();
-              final selection = await showLoanStartDateTimeConfiguration(
-                context,
-                start: startDate,
-              );
-              if (!mounted || selection == null) return;
-              setState(() => startDate = selection.start);
-            },
-            child: _ConfigurationButtonLabel(
-              icon: Icons.event_rounded,
-              title: 'Time • Date',
-              summary: '${DateFormat('MMM d, yyyy').format(startDate)} • ${DateFormat('h:mm a').format(startDate)}',
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _ConfigurationButton(
+                    onPressed: () async {
+                      FocusManager.instance.primaryFocus?.unfocus();
+                      final selection = await showLoanStartDateTimeConfiguration(
+                        context,
+                        start: startDate,
+                      );
+                      if (!mounted || selection == null) return;
+                      setState(() => startDate = selection.start);
+                    },
+                    icon: Icons.event_rounded,
+                    title: 'Time • Date',
+                    summary: _configurationDateTimeSummary(
+                      DateFormat('MMM d, yyyy').format(startDate), DateFormat('h:mm a').format(startDate)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _ConfigurationButton(
+                    onPressed: () async {
+                      FocusManager.instance.primaryFocus?.unfocus();
+                      final selection = await showLoanInterestConfiguration(
+                        context,
+                        type: interestType,
+                        period: interestPeriod,
+                        rate: double.tryParse(rate.text.trim()) ?? 0,
+                      );
+                      if (!mounted || selection == null) return;
+                      setState(() {
+                        interestType = selection.type;
+                        interestPeriod = selection.period;
+                        rate.text = selection.rate.toString().replaceFirst(RegExp(r'\.0$'), '');
+                      });
+                    },
+                    icon: Icons.percent_rounded,
+                    title: 'Interest',
+                    summary: interestType == LoanInterestType.none ? 'No interest'
+                        : interestPeriod == LoanInterestPeriod.flat ? 'One-time · ${rate.text}% total'
+                        : '${interestType == LoanInterestType.simple ? 'Simple' : 'Compound'} · ${rate.text}% per year',
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: () async {
-              FocusManager.instance.primaryFocus?.unfocus();
-              final selection = await showLoanInterestConfiguration(
-                context,
-                type: interestType,
-                period: interestPeriod,
-                rate: double.tryParse(rate.text.trim()) ?? 0,
-              );
-              if (!mounted || selection == null) return;
-              setState(() {
-                interestType = selection.type;
-                interestPeriod = selection.period;
-                rate.text = selection.rate.toString().replaceFirst(RegExp(r'\.0$'), '');
-              });
-            },
-            child: _ConfigurationButtonLabel(
-              icon: Icons.percent_rounded,
-              title: 'Interest',
-              summary: interestType == LoanInterestType.none ? 'No interest'
-                  : interestPeriod == LoanInterestPeriod.flat ? 'One-time · ${rate.text}% total'
-                  : '${interestType == LoanInterestType.simple ? 'Simple' : 'Compound'} · ${rate.text}% per year',
-            ),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton(
+          _ConfigurationButton(
             onPressed: () async {
               FocusManager.instance.primaryFocus?.unfocus();
               final selection = await showLoanDueDateTimeConfiguration(
@@ -761,13 +696,12 @@ class _LoanEditorSheetState extends State<_LoanEditorSheet> {
               if (!mounted || selection == null) return;
               setState(() => dueDate = selection.dueDate);
             },
-            child: _ConfigurationButtonLabel(
-              icon: Icons.event_available_rounded,
-              title: 'Due date',
-              summary: dueDate == null
-                  ? 'Off'
-                  : '${DateFormat('MMM d, yyyy').format(dueDate!)} • ${DateFormat('h:mm a').format(dueDate!)}',
-            ),
+            icon: Icons.event_available_rounded,
+            title: 'Due date',
+            summary: dueDate == null
+                ? 'Off'
+                : _configurationDateTimeSummary(
+                    DateFormat('MMM d, yyyy').format(dueDate!), DateFormat('h:mm a').format(dueDate!)),
           ),
           const SizedBox(height: 12),
           TextField(
