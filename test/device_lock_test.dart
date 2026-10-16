@@ -44,6 +44,26 @@ void main() {
       if (extra != null) extra,
     ])))));
 
+  void backgroundApp(WidgetTester tester) {
+    for (final state in [AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    // Hidden/paused stops ordinary frames. Force one test frame to inspect the
+    // privacy cover; production still waits for Android to render again.
+    tester.binding.scheduleForcedFrame();
+  }
+
+  void resumeApp(WidgetTester tester) {
+    final previous = tester.binding.lifecycleState;
+    if (previous == AppLifecycleState.paused) {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    }
+    if (previous == AppLifecycleState.paused || previous == AppLifecycleState.hidden) {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    }
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  }
+
   testWidgets('device lock uses the shared compact card and wraps on narrow screens', (tester) async {
     tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1;
@@ -109,20 +129,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Private transaction'), findsOneWidget);
     expect(authenticationCalls, 2);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    backgroundApp(tester);
     await tester.pump();
     expect(find.text('Private transaction'), findsNothing);
     now = now.add(const Duration(seconds: 9));
     await tester.pump(const Duration(seconds: 9));
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    resumeApp(tester);
     await tester.pumpAndSettle();
     expect(authenticationCalls, 2);
     expect(find.text('Private transaction'), findsOneWidget);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    backgroundApp(tester);
     now = now.add(const Duration(seconds: 6));
     await tester.pump(const Duration(seconds: 6));
     // Later lifecycle events must not restart the original ten-second window.
@@ -130,7 +146,7 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     now = now.add(const Duration(seconds: 4));
     await tester.pump(const Duration(seconds: 4));
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    resumeApp(tester);
     await tester.pumpAndSettle();
     expect(authenticationCalls, 3);
     expect(find.text('Private transaction'), findsOneWidget);
@@ -152,31 +168,27 @@ void main() {
     expect(find.text('Private transaction'), findsOneWidget);
     expect(find.text('Dinner draft'), findsOneWidget);
     expect(FocusManager.instance.primaryFocus, same(focus));
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    resumeApp(tester);
     await tester.pump();
     expect(authenticationCalls, 1);
     expect(find.text('Unlock'), findsNothing);
 
     // A subsequent real background visit gets its own full ten-second window.
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    backgroundApp(tester);
     await tester.pump();
     expect(find.text('Private transaction'), findsNothing);
     now = now.add(const Duration(seconds: 9));
     await tester.pump(const Duration(seconds: 9));
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    resumeApp(tester);
     await tester.pumpAndSettle();
     expect(authenticationCalls, 1);
     expect(find.text('Dinner draft'), findsOneWidget);
 
     authenticationSucceeds = false;
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    backgroundApp(tester);
     now = now.add(const Duration(seconds: 10));
     await tester.pump(const Duration(seconds: 10));
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    resumeApp(tester);
     await tester.pumpAndSettle();
     expect(authenticationCalls, 2);
     expect(find.text('Private transaction'), findsNothing);
@@ -191,12 +203,11 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
     expect(authenticationCalls, 1);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    backgroundApp(tester);
     // Advance wall time without pumping the timer, as if Android suspended Dart.
     now = now.add(const Duration(seconds: 11));
     authenticationSucceeds = false;
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    resumeApp(tester);
     await tester.pumpAndSettle();
     expect(authenticationCalls, 2);
     expect(find.text('Private transaction'), findsNothing);
@@ -208,14 +219,12 @@ void main() {
     authenticationSucceeds = true;
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    backgroundApp(tester);
     controller.deviceLockEnabled = false;
     controller.publishAutosavedNotes();
     now = now.add(const Duration(seconds: 11));
     await tester.pump(const Duration(seconds: 11));
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    resumeApp(tester);
     await tester.pumpAndSettle();
     expect(authenticationCalls, 1);
     expect(find.text('Private transaction'), findsOneWidget);
@@ -251,24 +260,22 @@ void main() {
       await tester.pumpWidget(app());
       await tester.pump();
       expect(authenticationCalls, 1);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      backgroundApp(tester);
       now = now.add(const Duration(seconds: 20));
       await tester.pump(const Duration(seconds: 20));
       // The result can arrive before Android reports the activity resumed.
       pending.complete(authenticated);
       await tester.pump();
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      resumeApp(tester);
       await tester.pumpAndSettle();
       expect(authenticationCalls, 1);
       expect(find.text('Private transaction'), authenticated ? findsOneWidget : findsNothing);
       expect(find.text('Unlock'), authenticated ? findsNothing : findsOneWidget);
       // A later app visit is a fresh request after either outcome.
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      backgroundApp(tester);
       now = now.add(const Duration(seconds: 10));
       await tester.pump(const Duration(seconds: 10));
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      resumeApp(tester);
       await tester.pumpAndSettle();
       expect(authenticationCalls, 2);
       expect(find.text('Private transaction'), authenticated ? findsOneWidget : findsNothing);
