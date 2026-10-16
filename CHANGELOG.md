@@ -1,3 +1,19 @@
+## 1.0.1330+374
+
+- Sync Recently deleted recovery copies through the Worker, including split and linked-loan recovery metadata. Atomically queue copies with transaction deletion, and sync recovery-copy removal after Restore or permanent deletion without applying balances twice.
+- Adopt existing local recovery copies once per sync account without overwriting tracked cloud mutations. Preserve copies in app/Telegram/Google Drive backups and non-destructive merges; normalize embedded category references.
+- Retain 30-day recovery availability, with atomic local expiry and versioned Worker expiry tombstones on the existing cron. Prevent rejected stale copies from resurrecting after permanent deletion.
+- Refresh an open Recently deleted screen when incoming sync reloads finance data. Retain account-boundary clearing, existing restore safeguards, UI controls, animations and blur.
+- Update app and Worker to 1.0.1330. An existing deployment must receive the updated Worker before it can accept recovery-copy sync. No database table migration is required on the Worker because the existing versioned entity store holds the new entity type.
+- Add cross-device upload/deletion and expiry rollback Worker checks; add app coverage for backfill, expiry, restore convergence, backup/category remapping and stale-copy conflicts.
+
+## 1.0.1329+373
+
+- Add a per-item Delete action beside Restore in Recently deleted, with explicit permanent-deletion confirmation and failure feedback. Keep actions inline on desktop and wrap below details on narrow or large-text screens.
+- Remove only the selected local recovery copy. Do not change live transactions, account balances, loan records or pending cloud deletion operations. Retain the other recovery copies and existing Restore flow.
+- Add regression coverage for confirmation/cancellation, failed deletes, repeated deletes, inability to restore a discarded copy, money/sync preservation and large-text phone layout.
+- Preserve all prior fixes, animations and blur. Keep Worker version 1.0.1305 unchanged.
+
 ## 1.0.1328+372
 
 - Distinguish temporary Android focus loss from actual backgrounding. Screenshot-style overlays no longer hide an unlocked app or start the ten-second lock timer. Hide content on hidden/paused and retain cold-start authentication, elapsed-time checks, native-prompt guards and the full background grace period.
