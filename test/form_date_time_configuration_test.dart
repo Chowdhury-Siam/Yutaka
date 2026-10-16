@@ -107,6 +107,8 @@ void main() {
       final chargeButton = find.ancestor(of: charge, matching: find.byType(OutlinedButton));
       expect(tester.getSize(dateButton).width, closeTo(tester.getSize(chargeButton).width, .5));
       expect(tester.getSize(dateButton).height, closeTo(tester.getSize(chargeButton).height, .5));
+      final statusGap = tester.getTopLeft(find.text('Off')).dy - tester.getBottomLeft(charge).dy;
+      expect(statusGap, inInclusiveRange(0, 6 * scale));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });
