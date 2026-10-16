@@ -5269,6 +5269,7 @@ var syncEntityTypes = [
   "planned_purchases",
   "subscriptions",
   "transactions",
+  "transaction_trash",
   "budgets",
   "budget_accounts",
   "budget_categories",
@@ -5462,6 +5463,10 @@ var index_default = {
     validateWorkerConfig(env);
     const db = createClient({ url: env.TURSO_DATABASE_URL, authToken: env.TURSO_AUTH_TOKEN });
     try {
+      const expiredUsers = await expireTransactionTrash(db);
+      for (const userId of expiredUsers) {
+        await notifySyncHub(env, { userId, username: "", deviceId: "worker-retention" });
+      }
       await runDueTelegramBackups(env, db);
       await runDueGoogleDriveBackups(env, db);
       await runDueAnalyticsPdfUploads(env, db);
@@ -5846,6 +5851,7 @@ var telegramBackupEntityTables = [
   "planned_purchases",
   "subscriptions",
   "transactions",
+  "transaction_trash",
   "budgets",
   "budget_accounts",
   "budget_categories",
@@ -6156,6 +6162,7 @@ function applyTelegramBackupRows(rows, database, setPreferences) {
     }
     if (!telegramBackupEntityTables.includes(entityType)) continue;
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
+    if (entityType === "transaction_trash" && Number(payload.deleted_on) <= Date.now() - 30 * 24 * 60 * 60 * 1e3) continue;
     const target = database[entityType];
     const indexes = rowIndexes.get(entityType);
     const stableId = entityId || telegramBackupRowIdentity(entityType, payload);
@@ -8347,6 +8354,7 @@ async function healthResponse(env) {
       analyticsUploadAvailable: true,
       realtimeSyncAvailable: Boolean(env.SYNC_HUB),
       profileMediaSyncAvailable: true,
+      transactionTrashSyncAvailable: true,
       accountDeletionAvailable: true,
       deploymentRecoveryAvailable: false,
       databaseReachable: false,
@@ -8378,6 +8386,7 @@ async function healthResponse(env) {
       analyticsUploadAvailable: true,
       realtimeSyncAvailable: Boolean(env.SYNC_HUB),
       profileMediaSyncAvailable: true,
+      transactionTrashSyncAvailable: true,
       accountDeletionAvailable: true,
       deploymentRecoveryAvailable,
       databaseReachable: true,
@@ -8396,6 +8405,7 @@ async function healthResponse(env) {
       analyticsUploadAvailable: true,
       realtimeSyncAvailable: Boolean(env.SYNC_HUB),
       profileMediaSyncAvailable: true,
+      transactionTrashSyncAvailable: true,
       accountDeletionAvailable: true,
       deploymentRecoveryAvailable: false,
       databaseReachable: false,
@@ -9191,6 +9201,42 @@ async function syncWriteTransaction(db) {
   }
 }
 __name(syncWriteTransaction, "syncWriteTransaction");
+async function expireTransactionTrash(db, now = Date.now()) {
+  const transaction = await syncWriteTransaction(db);
+  const users = /* @__PURE__ */ new Set();
+  try {
+    const expired = (await transaction.execute({
+      sql: `SELECT user_id, entity_id, version FROM sync_entities
+            WHERE entity_type = 'transaction_trash' AND deleted_at IS NULL
+              AND json_valid(payload_json)
+              AND CAST(json_extract(payload_json, '$.deleted_on') AS INTEGER) <= ?
+            LIMIT 200`,
+      args: [now - 30 * 24 * 60 * 60 * 1e3]
+    })).rows;
+    for (const row of expired) {
+      const userId = String(row.user_id);
+      const entityId = String(row.entity_id);
+      const version2 = Number(row.version) + 1;
+      const operationId = crypto.randomUUID();
+      await transaction.execute({
+        sql: `UPDATE sync_entities SET version = ?, payload_json = '{}', deleted_at = ?, updated_at = ?, last_operation_id = ?
+              WHERE user_id = ? AND entity_type = 'transaction_trash' AND entity_id = ?`,
+        args: [version2, now, now, operationId, userId, entityId]
+      });
+      await transaction.execute({
+        sql: `INSERT INTO sync_changes(user_id, entity_type, entity_id, operation, version, payload_json, device_id, operation_id, changed_at)
+              VALUES (?, 'transaction_trash', ?, 'delete', ?, NULL, 'worker-retention', ?, ?)`,
+        args: [userId, entityId, version2, operationId, now]
+      });
+      users.add(userId);
+    }
+    await transaction.commit();
+    return [...users];
+  } finally {
+    transaction.close();
+  }
+}
+__name(expireTransactionTrash, "expireTransactionTrash");
 async function pushWithOperations(db, auth, rawOperations, maxBatch) {
   if (!Array.isArray(rawOperations)) throw new HttpError(400, "operations must be an array.");
   if (rawOperations.length > maxBatch) throw new HttpError(413, `Batch limit is ${maxBatch} operations.`);
@@ -9533,10 +9579,24 @@ function validateOperation(raw) {
   if (operation === "upsert" && (!value.payload || typeof value.payload !== "object" || Array.isArray(value.payload))) {
     throw new HttpError(400, "Upsert payload must be an object.");
   }
+  const entityType = normalizeEntityType(value.entityType);
+  const entityId = normalizeId(value.entityId, "entityId");
+  if (entityType === "transaction_trash" && operation === "upsert") {
+    const payload = value.payload;
+    let recovery;
+    try {
+      recovery = JSON.parse(String(payload.payload_json));
+    } catch {
+      throw new HttpError(400, "Invalid transaction recovery payload.");
+    }
+    if (payload.id !== entityId || typeof payload.payload_json !== "string" || !Number.isSafeInteger(payload.deleted_on) || Number(payload.deleted_on) <= 0 || !recovery?.transaction || recovery.transaction.id !== entityId) {
+      throw new HttpError(400, "Invalid transaction recovery payload.");
+    }
+  }
   return {
     operationId: normalizeId(value.operationId, "operationId"),
-    entityType: normalizeEntityType(value.entityType),
-    entityId: normalizeId(value.entityId, "entityId"),
+    entityType,
+    entityId,
     operation,
     payload: value.payload,
     baseVersion,
@@ -9650,6 +9710,7 @@ export {
   index_default as default,
   deleteAccountPortal,
   deleteOwnAccount,
+  expireTransactionTrash,
   handleRequest,
   hashPassword,
   login,
