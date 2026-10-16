@@ -157,10 +157,15 @@ void main() {
         child: const RecentlyDeletedTransactionsScreen(),
       )),
     ));
-    await tester.runAsync(() => controller.database.deletedTransactions());
-    await tester.pump();
+    for (var attempt = 0; attempt < 10 && find.byType(ResponsiveListContent).evaluate().isEmpty; attempt++) {
+      await tester.runAsync(() => controller.database.deletedTransactions());
+      await tester.pump();
+    }
+    expect(find.byType(ResponsiveListContent), findsOneWidget);
     final delete = find.byKey(const ValueKey('trash-delete-discard'));
-    await tester.ensureVisible(delete);
+    // The older card can be outside the lazy list's build/cache range.
+    final scrollable = find.descendant(of: find.byType(ResponsiveListContent), matching: find.byType(Scrollable));
+    await tester.scrollUntilVisible(delete, 150, scrollable: scrollable);
     await tester.pumpAndSettle();
     await tester.tap(delete);
     await tester.pumpAndSettle();
