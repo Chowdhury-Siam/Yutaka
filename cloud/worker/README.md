@@ -222,3 +222,15 @@ For deployment, use **Actions > Deploy Self-Hosted Sync Worker > Run workflow** 
 `schema.sql` can be applied again without deleting existing sync data. `scripts/apply-schema.mjs` migrates older email-based accounts and adds the recovery-key and session-version columns.
 
 For advanced deployment integrations, `scripts/prepare-secrets.mjs` validates and emits only `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, and `JWT_SECRET` for Wrangler. The GitHub workflow writes this payload to a restricted temporary file and removes it afterward.
+
+
+### Recently deleted recovery copies
+
+Worker 1.0.1330 accepts `transaction_trash` as a versioned sync entity. Update an
+existing deployment before using this app release's recovery-copy sync. The
+existing `sync_entities` and `sync_changes` tables hold the copies; no new SQL
+finance table is required. Restore and permanent deletion emit recovery-copy
+tombstones. The existing five-minute cron expires up to 200 copies older than
+30 days per invocation, with versioned deletion changes for offline devices.
+App and cloud backups include unexpired recovery copies. Backups made before a
+permanent deletion remain historical snapshots and are not rewritten.
