@@ -97,6 +97,7 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
   bool authenticating = false;
   bool automaticUnlockPending = true;
   bool foreground = true;
+  bool backgrounded = false;
   String? pendingAction;
   String? message;
   Timer? refreshTimer;
@@ -226,7 +227,7 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
     lockDeadline = widget.now().add(_lockDelay);
     backgroundLockTimer = Timer(_lockDelay, () {
       backgroundLockTimer = null;
-      if (mounted && !foreground && controller?.deviceLockEnabled == true) {
+      if (mounted && backgrounded && controller?.deviceLockEnabled == true) {
         setState(() => locked = true);
       }
     });
@@ -235,7 +236,11 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     foreground = state == AppLifecycleState.resumed;
-    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+    // Android can lose focus to a screenshot overlay or notification shade
+    // while the activity is still visible. Only background visibility changes
+    // start the grace period and hide the app's content.
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      backgrounded = true;
       if (controller?.deviceLockEnabled == true) {
         _startBackgroundLock();
         FocusManager.instance.primaryFocus?.unfocus();
@@ -243,6 +248,7 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
         setState(() {});
       }
     } else if (state == AppLifecycleState.resumed) {
+      backgrounded = false;
       // Android may suspend Dart timers in the background. Check the saved
       // deadline before exposing any content or opening a widget quick action.
       final expired = lockDeadline != null && !widget.now().isBefore(lockDeadline!);
@@ -268,7 +274,7 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
-    final hidden = _androidQuickAccessSupported && (!bootstrapped || locked || (!foreground && controller?.deviceLockEnabled == true));
+    final hidden = _androidQuickAccessSupported && (!bootstrapped || locked || (backgrounded && controller?.deviceLockEnabled == true));
     return Stack(fit: StackFit.expand, children: [
       Offstage(offstage: hidden, child: TickerMode(enabled: !hidden, child: widget.child)),
       if (hidden) Material(color: Theme.of(context).scaffoldBackgroundColor,
