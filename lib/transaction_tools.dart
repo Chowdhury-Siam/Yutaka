@@ -50,6 +50,11 @@ bool transactionMatchesSearch(AppController state, MoneyTransaction tx, String q
 }
 
 extension TransactionToolsController on AppController {
+  Future<void> permanentlyDeleteTrashedTransaction(String id) async {
+    await database.permanentlyDeleteTrashedTransaction(id);
+    queueCloudSync(immediate: true);
+  }
+
   Future<void> saveTransactionShortcut(TransactionShortcut shortcut) async {
     if (shortcut.name.trim().isEmpty || shortcut.name.length > 60 || shortcut.draft.isLoanTransaction ||
         !shortcut.draft.amount.isFinite || shortcut.draft.amount < 0 || !shortcut.draft.serviceChargeValue.isFinite) {
@@ -84,13 +89,46 @@ extension TransactionToolsController on AppController {
 }
 
 extension TransactionTrashRepository on YutakaDatabase {
+  Future<void> expireTransactionTrash() async {
+    final database = await db;
+    await database.transaction(_expireTransactionTrash);
+  }
+
+  Future<void> _expireTransactionTrash(sql.DatabaseExecutor txn) async {
+    final expired = await txn.query('transaction_trash', columns: ['id'],
+      where: 'deleted_on <= ?', whereArgs: [dateToDb(DateTime.now().subtract(const Duration(days: 30)))]);
+    for (final row in expired) {
+      await txn.delete('transaction_trash', where: 'id = ?', whereArgs: [row['id']]);
+      await _enqueueSyncOperation(txn, entityType: 'transaction_trash', entityId: row['id'] as String,
+        operation: 'delete', payload: null);
+    }
+  }
+
+  Future<void> enqueueLegacyTransactionTrashForCloudSync(String accountScope) async {
+    if (accountScope.isEmpty) { return; }
+    final database = await db;
+    final marker = 'transactionTrashSyncBackfillV1:$accountScope';
+    await database.transaction((txn) async {
+      if ((await txn.query('sync_state', columns: ['value'], where: 'key = ?', whereArgs: [marker])).isNotEmpty) { return; }
+      final rows = await txn.rawQuery('''
+        SELECT t.* FROM transaction_trash t
+        WHERE NOT EXISTS (SELECT 1 FROM sync_outbox o WHERE o.entity_type = 'transaction_trash' AND o.entity_id = t.id)
+          AND NOT EXISTS (SELECT 1 FROM sync_entity_versions v WHERE v.entity_type = 'transaction_trash' AND v.entity_id = t.id)
+      ''');
+      for (final row in rows) {
+        await _enqueueSyncOperation(txn, entityType: 'transaction_trash', entityId: row['id'] as String,
+          operation: 'upsert', payload: row);
+      }
+      await txn.insert('sync_state', {'key': marker, 'value': '1'}, conflictAlgorithm: sql.ConflictAlgorithm.replace);
+    });
+  }
+
   Future<void> moveTransactionToTrash(String id) async {
     final database = await db;
     await database.transaction((txn) async {
       final rows = await txn.query('transactions', where: 'id = ?', whereArgs: [id]);
       if (rows.isEmpty) { return; }
-      await txn.delete('transaction_trash', where: 'deleted_on < ?',
-          whereArgs: [dateToDb(DateTime.now().subtract(const Duration(days: 30)))]);
+      await _expireTransactionTrash(txn);
       final tx = MoneyTransaction.fromMap(rows.single);
       final payload = <String, Object?>{'transaction': tx.toMap()};
       if (tx.linkedEntityType == 'loan_payments') {
@@ -113,12 +151,13 @@ extension TransactionTrashRepository on YutakaDatabase {
           }
         }
       }
-      await txn.insert('transaction_trash', {'id': id, 'payload_json': jsonEncode(payload),
-        'deleted_on': dateToDb(DateTime.now())}, conflictAlgorithm: sql.ConflictAlgorithm.replace);
+      final recovery = <String, Object?>{'id': id, 'payload_json': jsonEncode(payload), 'deleted_on': dateToDb(DateTime.now())};
+      await txn.insert('transaction_trash', recovery, conflictAlgorithm: sql.ConflictAlgorithm.replace);
       await _applyTransaction(txn, tx, -1);
       await txn.delete('transactions', where: 'id = ?', whereArgs: [id]);
       await _enqueueSyncOperation(txn, entityType: 'transactions', entityId: id, operation: 'delete', payload: null);
       await _enqueueTrashAccounts(txn, tx);
+      await _enqueueSyncOperation(txn, entityType: 'transaction_trash', entityId: id, operation: 'upsert', payload: recovery);
     });
   }
 
@@ -146,14 +185,23 @@ extension TransactionTrashRepository on YutakaDatabase {
 
   Future<List<Map<String, Object?>>> deletedTransactions() async {
     final database = await db;
-    await database.delete('transaction_trash', where: 'deleted_on < ?',
-        whereArgs: [dateToDb(DateTime.now().subtract(const Duration(days: 30)))]);
+    await expireTransactionTrash();
     return database.query('transaction_trash', orderBy: 'deleted_on DESC');
+  }
+
+  Future<void> permanentlyDeleteTrashedTransaction(String id) async {
+    final database = await db;
+    // Sync the recovery-copy deletion without touching live rows or balances.
+    await database.transaction((txn) async {
+      await txn.delete('transaction_trash', where: 'id = ?', whereArgs: [id]);
+      await _enqueueSyncOperation(txn, entityType: 'transaction_trash', entityId: id, operation: 'delete', payload: null);
+    });
   }
 
   Future<void> restoreDeletedTransaction(String id) async {
     final database = await db;
     await database.transaction((txn) async {
+      await _expireTransactionTrash(txn);
       final rows = await txn.query('transaction_trash', where: 'id = ?', whereArgs: [id]);
       if (rows.isEmpty) { return; }
       final payload = jsonDecode(rows.single['payload_json'] as String) as Map;
@@ -163,6 +211,7 @@ extension TransactionTrashRepository on YutakaDatabase {
       if (existing.isNotEmpty) {
         // A retry or another device already restored it. Never move money twice.
         await txn.delete('transaction_trash', where: 'id = ?', whereArgs: [id]);
+        await _enqueueSyncOperation(txn, entityType: 'transaction_trash', entityId: id, operation: 'delete', payload: null);
         return;
       }
       restored.validateAmounts();
@@ -209,6 +258,7 @@ extension TransactionTrashRepository on YutakaDatabase {
       await _enqueueSyncOperation(txn, entityType: 'transactions', entityId: id, operation: 'upsert', payload: restored.toMap());
       await _enqueueTrashAccounts(txn, restored);
       await txn.delete('transaction_trash', where: 'id = ?', whereArgs: [id]);
+      await _enqueueSyncOperation(txn, entityType: 'transaction_trash', entityId: id, operation: 'delete', payload: null);
     });
   }
 }
@@ -317,11 +367,22 @@ class RecentlyDeletedTransactionsScreen extends StatefulWidget {
 
 class _RecentlyDeletedTransactionsScreenState extends State<RecentlyDeletedTransactionsScreen> {
   late Future<List<Map<String, Object?>>> rows;
+  List<MoneyTransaction>? transactionSnapshot;
   bool busy = false;
   @override
   void initState() {
     super.initState();
     rows = context.read<AppController>().database.deletedTransactions();
+    transactionSnapshot = context.read<AppController>().transactions;
+  }
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final state = context.watch<AppController>();
+    if (!identical(transactionSnapshot, state.transactions)) {
+      transactionSnapshot = state.transactions;
+      rows = state.database.deletedTransactions();
+    }
   }
   Future<void> _restore(String id) async {
     if (busy) { return; }
@@ -338,6 +399,39 @@ class _RecentlyDeletedTransactionsScreenState extends State<RecentlyDeletedTrans
       if (mounted) { setState(() => busy = false); }
     }
   }
+  Future<void> _deletePermanently(String id) async {
+    if (busy) { return; }
+    final state = context.read<AppController>();
+    setState(() => busy = true);
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          scrollable: true,
+          title: const Text('Delete permanently?'),
+          content: const Text('Remove this transaction from Recently deleted on your synced devices? You will no longer be able to restore it from this list. Account balances stay unchanged.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(backgroundColor: kSleekExpense),
+              child: const Text('Delete permanently'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) { return; }
+      await state.permanentlyDeleteTrashedTransaction(id);
+      if (mounted) {
+        setState(() => rows = state.database.deletedTransactions());
+        showSnack(context, 'Transaction permanently deleted.');
+      }
+    } catch (_) {
+      if (mounted) { showSnack(context, 'Could not permanently delete transaction. Try again.'); }
+    } finally {
+      if (mounted) { setState(() => busy = false); }
+    }
+  }
   @override
   Widget build(BuildContext context) => PageScaffold(title: 'Recently deleted', child: FutureBuilder<List<Map<String, Object?>>>(
     future: rows, builder: (context, snapshot) {
@@ -346,18 +440,38 @@ class _RecentlyDeletedTransactionsScreenState extends State<RecentlyDeletedTrans
       final items = snapshot.data!;
       final state = context.watch<AppController>();
       return ResponsiveListContent(
-        header: const [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Deleted transactions stay on this device for 30 days. Restore brings back the transaction and its balance effect. Switching accounts clears this list.'))],
+        header: const [Padding(padding: EdgeInsets.only(bottom: 16), child: Text('Deleted transactions stay available for 30 days and sync with your account. Restore brings back the transaction and its balance effect. Permanent deletion removes its recovery copy from synced devices.'))],
         itemCount: items.length,
         empty: const EmptyCard(animated: true, icon: Icons.delete_outline_rounded, title: 'Nothing to restore', body: 'Transactions deleted on this device will appear here.'),
         itemBuilder: (context, index) {
           final row = items[index];
           final payload = jsonDecode(row['payload_json'] as String) as Map;
           final tx = MoneyTransaction.fromMap(Map<String, Object?>.from(payload['transaction'] as Map));
-          return Padding(padding: const EdgeInsets.only(bottom: 10), child: ExpressiveCard(child: ListTile(
-            title: Text(tx.title.isEmpty ? tx.displayType : tx.title),
-            subtitle: Text('${state.format(tx.amount)} • deleted ${DateFormat('MMM d').format(dateFromDb(row['deleted_on']))}'),
-            trailing: TextButton(onPressed: busy ? null : () => _restore(tx.id), child: const Text('Restore')),
-          )));
+          return Padding(padding: const EdgeInsets.only(bottom: 10), child: ExpressiveCard(
+            child: LayoutBuilder(builder: (context, constraints) {
+              final details = Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(tx.title.isEmpty ? tx.displayType : tx.title, style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 3),
+                Text('${state.format(tx.amount)} • deleted ${DateFormat('MMM d').format(dateFromDb(row['deleted_on']))}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSleekMuted)),
+              ]);
+              final actions = Wrap(spacing: 8, runSpacing: 4, children: [
+                TextButton(onPressed: busy ? null : () => _restore(tx.id), child: const Text('Restore')),
+                Tooltip(message: 'Delete permanently', child: TextButton.icon(
+                  key: ValueKey('trash-delete-${tx.id}'),
+                  onPressed: busy ? null : () => _deletePermanently(tx.id),
+                  style: TextButton.styleFrom(foregroundColor: kSleekExpense),
+                  icon: const Icon(Icons.delete_forever_rounded, size: 20), label: const Text('Delete'),
+                )),
+              ]);
+              if (constraints.maxWidth >= 480 && MediaQuery.textScalerOf(context).scale(14) <= 18) {
+                return Row(children: [Expanded(child: details), const SizedBox(width: 12), actions]);
+              }
+              return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                details, const SizedBox(height: 8), actions,
+              ]);
+            }),
+          ));
         },
       );
     },
