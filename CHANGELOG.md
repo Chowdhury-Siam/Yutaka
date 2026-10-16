@@ -1,3 +1,10 @@
+## 1.0.1328+372
+
+- Distinguish temporary Android focus loss from actual backgrounding. Screenshot-style overlays no longer hide an unlocked app or start the ten-second lock timer. Hide content on hidden/paused and retain cold-start authentication, elapsed-time checks, native-prompt guards and the full background grace period.
+- Remove forced two-line status spacing from shared form controls. Keep Service charge, Interest, Due date and Repeat values close to their labels; allow complete date/time values and ranges to wrap naturally. Keep paired controls side by side with aligned headings and matching outer sizes.
+- Add a focus-loss/draft regression and retain real-background lock coverage. Check compact status spacing at normal and large text sizes.
+- Preserve animations, blur, financial logic, scheduling, screenshot privacy flags and all prior fixes. Keep Worker version 1.0.1305 unchanged.
+
 ## 1.0.1327+371
 
 - Remove obsolete Repeat-picker border implementation checks after adopting shared selection cards. Retain recurrence, persistence, manual-entry and scheduler checks, plus widget coverage for every recurrence choice and cancellation. This test-only correction keeps release versions unchanged.
