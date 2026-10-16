@@ -17,6 +17,7 @@ const _entityTables = <String>[
   'planned_purchases',
   'subscriptions',
   'transactions',
+  'transaction_trash',
   'budgets',
   'loan_contacts',
   'loans',
@@ -272,7 +273,7 @@ String _stableValueKey(Object? value) {
 }
 
 int _rowTimestamp(Map<String, Object?> row) {
-  for (final key in const ['updated_on', 'created_on']) {
+  for (final key in const ['updated_on', 'created_on', 'deleted_on']) {
     final value = row[key];
     if (value is num) return value.toInt();
     if (value is String) {
