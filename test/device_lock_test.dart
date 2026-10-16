@@ -38,9 +38,10 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
   });
 
-  Widget app() => ChangeNotifierProvider<AppController>.value(value: controller,
+  Widget app({Widget? extra}) => ChangeNotifierProvider<AppController>.value(value: controller,
     child: MaterialApp(home: DeviceLockGate(now: () => now, child: Scaffold(body: Column(children: [
       const Text('Private transaction'), const DeviceLockSettingsTile(),
+      if (extra != null) extra,
     ])))));
 
   testWidgets('device lock uses the shared compact card and wraps on narrow screens', (tester) async {
@@ -109,6 +110,8 @@ void main() {
     expect(find.text('Private transaction'), findsOneWidget);
     expect(authenticationCalls, 2);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     await tester.pump();
     expect(find.text('Private transaction'), findsNothing);
     now = now.add(const Duration(seconds: 9));
@@ -118,6 +121,8 @@ void main() {
     expect(authenticationCalls, 2);
     expect(find.text('Private transaction'), findsOneWidget);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     now = now.add(const Duration(seconds: 6));
     await tester.pump(const Duration(seconds: 6));
     // Later lifecycle events must not restart the original ten-second window.
@@ -129,6 +134,54 @@ void main() {
     await tester.pumpAndSettle();
     expect(authenticationCalls, 3);
     expect(find.text('Private transaction'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('screenshot-style focus loss preserves the draft and does not start the background lock', (tester) async {
+    controller.deviceLockEnabled = true;
+    authenticationSucceeds = true;
+    await tester.pumpWidget(app(extra: const TextField(key: ValueKey('draft'))));
+    await tester.pumpAndSettle();
+    expect(authenticationCalls, 1);
+    await tester.enterText(find.byKey(const ValueKey('draft')), 'Dinner draft');
+    final focus = FocusManager.instance.primaryFocus;
+    expect(focus, isNotNull);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    now = now.add(const Duration(seconds: 15));
+    await tester.pump(const Duration(seconds: 15));
+    expect(find.text('Private transaction'), findsOneWidget);
+    expect(find.text('Dinner draft'), findsOneWidget);
+    expect(FocusManager.instance.primaryFocus, same(focus));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(authenticationCalls, 1);
+    expect(find.text('Unlock'), findsNothing);
+
+    // A subsequent real background visit gets its own full ten-second window.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    expect(find.text('Private transaction'), findsNothing);
+    now = now.add(const Duration(seconds: 9));
+    await tester.pump(const Duration(seconds: 9));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(authenticationCalls, 1);
+    expect(find.text('Dinner draft'), findsOneWidget);
+
+    authenticationSucceeds = false;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    now = now.add(const Duration(seconds: 10));
+    await tester.pump(const Duration(seconds: 10));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(authenticationCalls, 2);
+    expect(find.text('Private transaction'), findsNothing);
+    expect(find.text('Unlock'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
@@ -156,6 +209,8 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     controller.deviceLockEnabled = false;
     controller.publishAutosavedNotes();
     now = now.add(const Duration(seconds: 11));
