@@ -165,6 +165,7 @@ class BudgetCategoryReferenceMerge {
 
 class CategoryDatabaseMergeResult {
   const CategoryDatabaseMergeResult({
+    this.updatedTransactionTrashIds = const {},
     required this.plan,
     required this.updatedTransactionIds,
     required this.updatedPlannedPurchaseIds,
@@ -182,6 +183,7 @@ class CategoryDatabaseMergeResult {
 
   final CategoryMergePlan plan;
   final Set<String> updatedTransactionIds;
+  final Set<String> updatedTransactionTrashIds;
   final Set<String> updatedPlannedPurchaseIds;
   final Set<String> updatedSubscriptionIds;
   final List<BudgetCategoryReferenceMerge> updatedBudgetReferences;
@@ -218,6 +220,7 @@ class YutakaDatabase {
         await _ensureSubscriptionColumns(database);
         await _ensurePlannedPurchaseColumns(database);
         await _ensureLoanPaymentColumns(database);
+        await database.transaction(TransactionTrashRepository(this)._expireTransactionTrash);
       },
     );
     return _db!;
@@ -432,8 +435,6 @@ class YutakaDatabase {
     await database.execute('''CREATE TABLE IF NOT EXISTS transaction_trash(
       id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, deleted_on INTEGER NOT NULL
     )''');
-    await database.delete('transaction_trash', where: 'deleted_on < ?',
-        whereArgs: [dateToDb(DateTime.now().subtract(const Duration(days: 30)))]);
     await database.execute('CREATE INDEX IF NOT EXISTS idx_sync_outbox_created ON sync_outbox(created_at)');
     await database.execute('CREATE INDEX IF NOT EXISTS idx_sync_outbox_entity ON sync_outbox(entity_type, entity_id)');
     await database.execute('CREATE INDEX IF NOT EXISTS idx_sync_conflicts_open ON sync_conflicts(resolved_at, created_at)');
@@ -791,12 +792,22 @@ class YutakaDatabase {
     if (!plan.hasChanges) return CategoryDatabaseMergeResult.empty;
 
     final updatedTransactionIds = <String>{};
+    final updatedTransactionTrashIds = <String>{};
     final updatedPlannedPurchaseIds = <String>{};
     final updatedSubscriptionIds = <String>{};
     final updatedBudgetReferences = <BudgetCategoryReferenceMerge>[];
     final budgetReferenceKeys = <String>{};
     await database.transaction((txn) async {
       final now = dateToDb(DateTime.now());
+      final recoveryRows = await txn.query('transaction_trash');
+      final normalizedRecovery = normalizeCategoryDatabasePayload({'categories': rows, 'transaction_trash': recoveryRows});
+      final originalRecovery = {for (final row in recoveryRows) row['id']: row['payload_json']};
+      for (final row in (normalizedRecovery.database['transaction_trash'] as List? ?? []).cast<Map>()) {
+        if (originalRecovery[row['id']] != row['payload_json']) {
+          await txn.update('transaction_trash', {'payload_json': row['payload_json']}, where: 'id = ?', whereArgs: [row['id']]);
+          updatedTransactionTrashIds.add(row['id'] as String);
+        }
+      }
       for (final entry in plan.normalizedNamesByCanonicalId.entries) {
         await txn.update(
           'categories',
@@ -859,6 +870,7 @@ class YutakaDatabase {
     return CategoryDatabaseMergeResult(
       plan: plan,
       updatedTransactionIds: Set.unmodifiable(updatedTransactionIds),
+      updatedTransactionTrashIds: Set.unmodifiable(updatedTransactionTrashIds),
       updatedPlannedPurchaseIds: Set.unmodifiable(updatedPlannedPurchaseIds),
       updatedSubscriptionIds: Set.unmodifiable(updatedSubscriptionIds),
       updatedBudgetReferences: List.unmodifiable(updatedBudgetReferences),
@@ -1177,7 +1189,8 @@ class YutakaDatabase {
 
   Future<Map<String, dynamic>> exportAll() async {
     final database = await db;
-    final tables = ['accounts', 'categories', 'notes', 'planned_purchases', 'subscriptions', 'transactions', 'budgets', 'budget_accounts', 'budget_categories', 'loan_contacts', 'loans', 'loan_payments'];
+    await expireTransactionTrash();
+    final tables = ['accounts', 'categories', 'notes', 'planned_purchases', 'subscriptions', 'transactions', 'transaction_trash', 'budgets', 'budget_accounts', 'budget_categories', 'loan_contacts', 'loans', 'loan_payments'];
     final data = <String, dynamic>{};
     for (final table in tables) {
       data[table] = await database.query(table);
@@ -1188,9 +1201,8 @@ class YutakaDatabase {
   Future<CategoryMergePlan> importAll(Map<String, dynamic> data) async {
     final database = await db;
     final normalized = normalizeCategoryDatabasePayload(data);
-    final tables = ['loan_payments', 'loans', 'loan_contacts', 'budget_categories', 'budget_accounts', 'budgets', 'transactions', 'subscriptions', 'planned_purchases', 'notes', 'categories', 'accounts'];
+    final tables = ['transaction_trash', 'loan_payments', 'loans', 'loan_contacts', 'budget_categories', 'budget_accounts', 'budgets', 'transactions', 'subscriptions', 'planned_purchases', 'notes', 'categories', 'accounts'];
     await database.transaction((txn) async {
-      await txn.delete('transaction_trash');
       for (final table in tables) {
         await txn.delete(table);
       }
@@ -1223,12 +1235,11 @@ class YutakaDatabase {
 
   Future<void> clearFinanceDataForRemoteLogin() async {
     final database = await db;
-    final tables = ['loan_payments', 'loans', 'loan_contacts', 'budget_categories', 'budget_accounts', 'budgets', 'transactions', 'subscriptions', 'planned_purchases', 'notes', 'categories', 'accounts'];
+    final tables = ['transaction_trash', 'loan_payments', 'loans', 'loan_contacts', 'budget_categories', 'budget_accounts', 'budgets', 'transactions', 'subscriptions', 'planned_purchases', 'notes', 'categories', 'accounts'];
     await database.transaction((txn) async {
       for (final table in tables) {
         await txn.delete(table);
       }
-      await txn.delete('transaction_trash');
       await txn.delete('sync_outbox');
       await txn.delete('sync_entity_versions');
       await txn.delete('sync_conflicts');
@@ -1237,12 +1248,11 @@ class YutakaDatabase {
 
   Future<void> replaceFinanceDataWithRemoteChanges(List<Map<String, dynamic>> changes) async {
     final database = await db;
-    final tables = ['loan_payments', 'loans', 'loan_contacts', 'budget_categories', 'budget_accounts', 'budgets', 'transactions', 'subscriptions', 'planned_purchases', 'notes', 'categories', 'accounts'];
+    final tables = ['transaction_trash', 'loan_payments', 'loans', 'loan_contacts', 'budget_categories', 'budget_accounts', 'budgets', 'transactions', 'subscriptions', 'planned_purchases', 'notes', 'categories', 'accounts'];
     await database.transaction((txn) async {
       for (final table in tables) {
         await txn.delete(table);
       }
-      await txn.delete('transaction_trash');
       await txn.delete('sync_outbox');
       await txn.delete('sync_entity_versions');
       await txn.delete('sync_conflicts');
@@ -1274,6 +1284,7 @@ class YutakaDatabase {
     'planned_purchases',
     'subscriptions',
     'transactions',
+    'transaction_trash',
     'budgets',
     'budget_accounts',
     'budget_categories',
@@ -1391,7 +1402,8 @@ class YutakaDatabase {
       await txn.delete('sync_conflicts');
       // Signing out while keeping local data discards the pending outbox.
       // Permit legacy notes to be adopted again on the next account login.
-      await txn.delete('sync_state', where: 'key LIKE ?', whereArgs: ['notesSyncBackfillV1:%']);
+      await txn.delete('sync_state', where: 'key LIKE ? OR key LIKE ?',
+          whereArgs: ['notesSyncBackfillV1:%', 'transactionTrashSyncBackfillV1:%']);
     });
   }
 
@@ -1601,7 +1613,7 @@ class YutakaDatabase {
           ? !remoteDeleted
           : hasUnattemptedLocalMutation || serverVersion == 0 || remote == null ||
               (payload != null && (remoteDeleted
-                  ? entityType != 'notes' && _syncRowTimestamp(payload) > _syncChangeTimestamp(remote)
+                  ? entityType != 'transaction_trash' && entityType != 'notes' && _syncRowTimestamp(payload) > _syncChangeTimestamp(remote)
                   : _syncRowTimestamp(payload) > _syncRowTimestamp(remotePayload)));
 
       await txn.insert('sync_entity_versions',
@@ -1663,7 +1675,7 @@ class YutakaDatabase {
           final remoteDeleteTimestamp = _syncChangeTimestamp(change);
           final keepLocal = localRow != null &&
               (hasPendingLocalMutation ||
-                  ((entityType != 'notes' || pendingLocalRows.isEmpty) && localTimestamp > 0 &&
+                  (entityType != 'transaction_trash' && (entityType != 'notes' || pendingLocalRows.isEmpty) && localTimestamp > 0 &&
                       (remoteDeleteTimestamp <= 0 || localTimestamp > remoteDeleteTimestamp)));
 
           if (keepLocal && pendingLocalRows.isEmpty) {
@@ -1769,7 +1781,7 @@ class YutakaDatabase {
   }
 
   int _syncRowTimestamp(Map<String, Object?> row) {
-    for (final key in const ['updated_on', 'created_on']) {
+    for (final key in const ['updated_on', 'created_on', 'deleted_on']) {
       final value = row[key];
       if (value is num) return value.toInt();
       if (value is String) {
@@ -5972,6 +5984,10 @@ class AppController extends ChangeNotifier {
         await database.enqueueLegacyNotesForCloudSync(
           '${cloudSyncApiBaseUrl.trim().toLowerCase()}|${syncAccountUsername.trim().toLowerCase()}',
         );
+        await database.expireTransactionTrash();
+        await database.enqueueLegacyTransactionTrashForCloudSync(
+          '${cloudSyncApiBaseUrl.trim().toLowerCase()}|${syncAccountUsername.trim().toLowerCase()}',
+        );
         _throwIfCloudSyncCancelled(cancellationSerial);
         if (!silent) {
           syncStatus = 'Uploading local changes...';
@@ -6587,6 +6603,9 @@ class AppController extends ChangeNotifier {
       final transactionIds = result.updatedTransactionIds.toList()..sort();
       for (final transactionId in transactionIds) {
         await database.enqueueTableRow('transactions', transactionId);
+      }
+      for (final id in result.updatedTransactionTrashIds.toList()..sort()) {
+        await database.enqueueTableRow('transaction_trash', id);
       }
       final plannedPurchaseIds = result.updatedPlannedPurchaseIds.toList()..sort();
       for (final plannedPurchaseId in plannedPurchaseIds) {
