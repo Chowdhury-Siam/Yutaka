@@ -4,11 +4,67 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { createClient } from '@libsql/client';
-import { handleRequest } from '../src/index.ts';
+import { handleRequest, expireTransactionTrash } from '../src/index.ts';
 import { deploymentSecrets } from '../scripts/prepare-secrets.mjs';
 
 const schema = fs.readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 const context = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as ExecutionContext;
+
+test('recovery copies round-trip across devices and deletion preserves live finance entities', async t => {
+  const { db, call, session, op } = await fixture(t);
+  const push = (operations: unknown[], token = session.accessToken) => call('/v1/sync/push', 'POST', { operations }, token);
+  const payload = { id: 'deleted-expense', deleted_on: Date.now(),
+    payload_json: JSON.stringify({ transaction: { id: 'deleted-expense', amount: 110, category_splits: '{"food":60,"travel":40}' },
+      payment: { id: 'loan-payment', loan_id: 'loan-one', principal_amount: 100 } }) };
+  const recovery = { ...op('trash-create'), entityType: 'transaction_trash', entityId: payload.id, payload };
+  for (const invalid of [{ ...payload, id: 'wrong-id' }, { ...payload, deleted_on: -1 },
+    { ...payload, payload_json: '{broken' }, { ...payload, payload_json: '{"transaction":{"id":"wrong-id"}}' }]) {
+    assert.equal((await push([op('must-not-partially-write'), { ...recovery, payload: invalid }])).status, 400);
+    assert.equal(Number((await db.execute('SELECT COUNT(*) AS n FROM sync_entities')).rows[0].n), 0);
+  }
+  assert.equal((await push([op('account-create'), recovery])).status, 200);
+  const login = await call('/v1/auth/login', 'POST', { username: 'sync-owner', password: 'password123', deviceId: 'device-two' });
+  assert.equal(login.status, 200);
+  const second = await login.json() as any;
+  const pull = await (await call('/v1/sync/pull?cursor=0', 'GET', undefined, second.accessToken)).json() as any;
+  assert.deepEqual(pull.changes.find((change: any) => change.entityType === 'transaction_trash').payload, payload);
+  const before = (await db.execute("SELECT * FROM sync_entities WHERE entity_type = 'accounts'")).rows;
+  const remove = { ...recovery, operationId: 'trash-delete', operation: 'delete', payload: null, baseVersion: 1 };
+  assert.equal((await push([remove], second.accessToken)).status, 200);
+  assert.equal((await push([remove], second.accessToken)).status, 200);
+  assert.deepEqual((await db.execute("SELECT * FROM sync_entities WHERE entity_type = 'accounts'")).rows, before);
+  const stale = await (await push([{ ...recovery, operationId: 'stale-trash-create' }])).json() as any;
+  assert.equal(stale.accepted.length, 0);
+  assert.equal(stale.conflicts[0].serverVersion, 2);
+  const updates = await (await call('/v1/sync/pull?cursor=' + pull.cursor, 'GET', undefined, session.accessToken)).json() as any;
+  assert.equal(updates.changes[0].entityType, 'transaction_trash');
+  assert.equal(updates.changes[0].operation, 'delete');
+  assert.equal(updates.changes.length, 1);
+});
+
+test('cloud retention emits one versioned deletion and rolls back failures', async t => {
+  const { db, call, session, op } = await fixture(t);
+  const now = Date.now();
+  const payload = (id: string, age: number) => ({ id, deleted_on: now - age,
+    payload_json: JSON.stringify({ transaction: { id, amount: 42 } }) });
+  const old = payload('expired-trash', 30 * 86400000);
+  const fresh = payload('fresh-trash', 86400000);
+  const response = await call('/v1/sync/push', 'POST', { operations: [old, fresh].map((value, index) => ({
+    ...op('trash-retention-' + index), entityType: 'transaction_trash', entityId: value.id, payload: value,
+  })) }, session.accessToken);
+  assert.equal(response.status, 200);
+  await db.execute("CREATE TRIGGER reject_expiry BEFORE INSERT ON sync_changes WHEN NEW.operation = 'delete' BEGIN SELECT RAISE(ABORT, 'expiry failure'); END");
+  await assert.rejects(expireTransactionTrash(db, now));
+  assert.equal((await db.execute("SELECT deleted_at FROM sync_entities WHERE entity_id = 'expired-trash'")).rows[0].deleted_at, null);
+  await db.execute('DROP TRIGGER reject_expiry');
+  assert.equal((await expireTransactionTrash(db, now)).length, 1);
+  assert.deepEqual(await expireTransactionTrash(db, now), []);
+  const changes = await (await call('/v1/sync/pull?cursor=0', 'GET', undefined, session.accessToken)).json() as any;
+  assert.equal(changes.changes.at(-1).operation, 'delete');
+  assert.equal(changes.changes.at(-1).entityId, 'expired-trash');
+  assert.equal(changes.changes.at(-1).version, 2);
+  assert.equal((await db.execute("SELECT deleted_at FROM sync_entities WHERE entity_id = 'fresh-trash'")).rows[0].deleted_at, null);
+});
 
 async function fixture(t: test.TestContext) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'yutaka-sync-reliability-'));
