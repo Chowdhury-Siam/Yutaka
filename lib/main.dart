@@ -18798,14 +18798,8 @@ class _ConfigurationButtonLabel extends StatelessWidget {
               style: TextStyle(fontSize: theme.textTheme.bodySmall?.fontSize, fontWeight: FontWeight.w700))),
           ],
         ),
-        const SizedBox(height: 5),
-        ConstrainedBox(
-          // Reserve the same summary area for a date/time pair or a short status.
-          // A minimum (rather than a fixed height) lets ranges and large text grow.
-          constraints: BoxConstraints(minHeight:
-            MediaQuery.textScalerOf(context).scale(summaryStyle.fontSize!) * summaryStyle.height! * 2),
-          child: Center(child: Text(summary, textAlign: TextAlign.center, style: summaryStyle)),
-        ),
+        const SizedBox(height: 3),
+        Text(summary, textAlign: TextAlign.center, style: summaryStyle),
       ],
     );
   }
