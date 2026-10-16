@@ -240,9 +240,12 @@ class _DeviceLockGateState extends State<DeviceLockGate> with WidgetsBindingObse
     // while the activity is still visible. Only background visibility changes
     // start the grace period and hide the app's content.
     if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      final enteringBackground = !backgrounded;
       backgrounded = true;
       if (controller?.deviceLockEnabled == true) {
-        _startBackgroundLock();
+        // hidden also occurs on the way back from paused. Do not re-arm the
+        // lock after a native prompt has already completed in the background.
+        if (enteringBackground) { _startBackgroundLock(); }
         FocusManager.instance.primaryFocus?.unfocus();
         // Hide private content immediately, even during the grace period.
         setState(() {});
