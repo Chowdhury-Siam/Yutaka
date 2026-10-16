@@ -1,5 +1,8 @@
 ## 1.0.1330+374
 
+- Only arm the background lock when entering the background, preserving native-auth completion across the full paused → hidden → inactive → resumed return sequence.
+- Correct CI widget-test lifecycle sequences to follow paused → hidden → inactive → resumed. Force one test frame when checking the paused privacy cover, since ordinary frames stop in the background. Scroll to lazily built recovery cards before invoking Delete. Keep lock assertions, deletion checks and release versions unchanged while correcting this blocked release.
+
 - Sync Recently deleted recovery copies through the Worker, including split and linked-loan recovery metadata. Atomically queue copies with transaction deletion, and sync recovery-copy removal after Restore or permanent deletion without applying balances twice.
 - Adopt existing local recovery copies once per sync account without overwriting tracked cloud mutations. Preserve copies in app/Telegram/Google Drive backups and non-destructive merges; normalize embedded category references.
 - Retain 30-day recovery availability, with atomic local expiry and versioned Worker expiry tombstones on the existing cron. Prevent rejected stale copies from resurrecting after permanent deletion.
