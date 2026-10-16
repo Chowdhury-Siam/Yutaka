@@ -180,6 +180,18 @@ void main() {
     expect(await database.pendingSyncOperationCount(), 0);
   });
 
+  test('a remote permanent deletion cannot resurrect a rejected recovery copy with a future clock', () async {
+    final recovery = <String, Object?>{'id': 'deleted-trash', 'payload_json': '{"transaction":{"id":"deleted-trash"}}', 'deleted_on': 300};
+    await database.upsertSyncEntityRow('transaction_trash', recovery);
+    await database.enqueueTableRow('transaction_trash', 'deleted-trash');
+    final rejected = (await database.pendingSyncOperations()).single;
+    final tombstone = <String, dynamic>{'entityType': 'transaction_trash', 'entityId': 'deleted-trash', 'operation': 'delete', 'version': 3, 'changedAt': 200};
+    await database.applyRemoteChanges([tombstone], (_) async {}, conflictedOperationIds: {rejected['id'] as String});
+    expect(await database.reconcileSyncConflict(conflict(rejected), tombstone), isFalse);
+    expect(await database.syncEntityRow('transaction_trash', 'deleted-trash'), isNull);
+    expect(await database.pendingSyncOperationCount(), 0);
+  });
+
   test('an interrupted conflict pull preserves the outbox and cursor across restart', () async {
     final controller = AppController();
     addTearDown(controller.dispose);
