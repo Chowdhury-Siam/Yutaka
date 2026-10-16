@@ -115,7 +115,7 @@ NormalizedCategoryDatabasePayload normalizeCategoryDatabasePayload(Map<String, d
     return normalized;
   }).toList();
 
-  database['transactions'] = _payloadRows(source['transactions']).map((row) {
+  Map<String, Object?> normalizeTransaction(Map<String, Object?> row) {
     final normalized = Map<String, Object?>.from(row);
     final categoryId = normalized['category_id']?.toString() ?? '';
     if (categoryId.isNotEmpty) normalized['category_id'] = plan.remapCategoryId(categoryId);
@@ -135,6 +135,25 @@ NormalizedCategoryDatabasePayload normalizeCategoryDatabasePayload(Map<String, d
       } on FormatException {
         // Keep the original metadata for diagnostics rather than erasing it.
       }
+    }
+    return normalized;
+  }
+
+  database['transactions'] = _payloadRows(source['transactions']).map(normalizeTransaction).toList();
+
+  database['transaction_trash'] = _payloadRows(source['transaction_trash']).map((row) {
+    final normalized = Map<String, Object?>.from(row);
+    try {
+      final payload = jsonDecode(row['payload_json'] as String) as Map;
+      if (payload['transaction'] is Map) {
+        normalized['payload_json'] = jsonEncode({...payload,
+          'transaction': normalizeTransaction(Map<String, Object?>.from(payload['transaction'] as Map)),
+        });
+      }
+    } on FormatException {
+      // Preserve unreadable recovery metadata rather than silently discarding it.
+    } on TypeError {
+      // Old or malformed backups remain available for diagnostics.
     }
     return normalized;
   }).toList();
