@@ -79,11 +79,15 @@ void main() {
     expect(controller.accountOf('cash')!.amount, 1000);
     expect(controller.transactions, isEmpty);
     expect(await controller.database.deletedTransactions(), hasLength(1));
+    final recovery = (await controller.database.latestPendingSyncOperation('transaction_trash', 'split'))!;
+    expect(recovery['operation'], 'upsert');
+    expect(jsonDecode(jsonDecode(recovery['payload_json'] as String)['payload_json'] as String)['transaction']['amount'], 220);
     await controller.restoreDeletedTransaction('split');
     await controller.restoreDeletedTransaction('split');
     expect(controller.accountOf('cash')!.amount, 780);
     expect(controller.transactions.single.categorySplits, {food: 120, travel: 80});
     expect(await controller.database.deletedTransactions(), isEmpty);
+    expect((await controller.database.latestPendingSyncOperation('transaction_trash', 'split'))!['operation'], 'delete');
     final queued = await controller.database.pendingSyncOperations();
     final transaction = queued.singleWhere((row) => row['entity_type'] == 'transactions');
     expect(transaction['operation'], 'upsert');
@@ -103,6 +107,79 @@ void main() {
     await database.delete('accounts', where: 'id = ?', whereArgs: ['cash']);
     await expectLater(controller.restoreDeletedTransaction('split'), throwsStateError);
     expect(await controller.database.deletedTransactions(), hasLength(1));
+  });
+
+  test('permanent trash deletion preserves balances, live rows, pending sync and other recovery copies', () async {
+    for (final id in ['discard', 'recover', 'live']) {
+      await controller.addTransaction(split(id: id));
+    }
+    await controller.moveTransactionToTrash('discard');
+    await controller.moveTransactionToTrash('recover');
+    final accounts = await database.query('accounts', orderBy: 'id');
+    final live = await database.query('transactions', orderBy: 'id');
+    final pending = await controller.database.pendingSyncOperations();
+    await database.execute("CREATE TRIGGER reject_trash_delete BEFORE DELETE ON transaction_trash BEGIN SELECT RAISE(ABORT, 'failed delete'); END");
+    await expectLater(controller.database.permanentlyDeleteTrashedTransaction('discard'), throwsA(isA<sql.DatabaseException>()));
+    expect(await database.query('transaction_trash'), hasLength(2));
+    await database.execute('DROP TRIGGER reject_trash_delete');
+    await controller.database.permanentlyDeleteTrashedTransaction('discard');
+    await controller.database.permanentlyDeleteTrashedTransaction('discard');
+    await controller.database.permanentlyDeleteTrashedTransaction('live');
+    await controller.database.restoreDeletedTransaction('discard');
+    expect((await controller.database.deletedTransactions()).single['id'], 'recover');
+    expect(await database.query('accounts', orderBy: 'id'), accounts);
+    expect(await database.query('transactions', orderBy: 'id'), live);
+    final afterDelete = await controller.database.pendingSyncOperations();
+    expect(afterDelete.where((row) => row['entity_type'] != 'transaction_trash').toList(),
+      pending.where((row) => row['entity_type'] != 'transaction_trash').toList());
+    expect(afterDelete.singleWhere((row) => row['entity_type'] == 'transaction_trash' && row['entity_id'] == 'discard')['operation'], 'delete');
+    await controller.restoreDeletedTransaction('recover');
+    expect(controller.transactions.map((tx) => tx.id).toSet(), {'live', 'recover'});
+    expect(controller.accountOf('cash')!.amount, 780);
+    expect(await controller.database.deletedTransactions(), isEmpty);
+  });
+
+  testWidgets('permanent delete confirms, cancels and removes only the selected trash card on a large-text phone', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() async {
+      await controller.addTransaction(split(id: 'discard').copyWith(title: 'Discard me'));
+      await controller.addTransaction(split(id: 'recover').copyWith(title: 'Keep me'));
+      await controller.moveTransactionToTrash('discard');
+      await controller.moveTransactionToTrash('recover');
+    });
+    await tester.pumpWidget(ChangeNotifierProvider<AppController>.value(
+      value: controller,
+      child: MaterialApp(home: MediaQuery(
+        data: const MediaQueryData(size: Size(320, 640), textScaler: TextScaler.linear(2), disableAnimations: true),
+        child: const RecentlyDeletedTransactionsScreen(),
+      )),
+    ));
+    await tester.runAsync(() => controller.database.deletedTransactions());
+    await tester.pump();
+    final delete = find.byKey(const ValueKey('trash-delete-discard'));
+    await tester.ensureVisible(delete);
+    await tester.pumpAndSettle();
+    await tester.tap(delete);
+    await tester.pumpAndSettle();
+    expect(find.text('Delete permanently?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(await tester.runAsync(() => controller.database.deletedTransactions()), hasLength(2));
+    await tester.tap(delete);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete permanently'));
+    await tester.runAsync(() => controller.database.deletedTransactions());
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('trash-delete-discard')), findsNothing);
+    final remaining = await tester.runAsync(() => controller.database.deletedTransactions());
+    expect(remaining!.single['id'], 'recover');
+    expect(controller.accountOf('cash')!.amount, 1000);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   test('account splits preserve both balances, budgets, backup, sync, edit and undo', () async {
@@ -243,6 +320,97 @@ void main() {
     expect(await controller.database.deletedTransactions(), isEmpty);
     final map = split().toMap()..remove('category_splits');
     expect(MoneyTransaction.fromMap(map).categoryAmounts, {food: 110});
+  });
+
+  test('legacy recovery copies backfill once per account without overwriting tracked rows', () async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final id in ['legacy', 'tracked']) {
+      await database.insert('transaction_trash', {'id': id, 'payload_json': jsonEncode({'transaction': split(id: id).toMap()}), 'deleted_on': now});
+    }
+    await controller.database.saveEntityVersion('transaction_trash', 'tracked', 2);
+    await controller.database.enqueueLegacyTransactionTrashForCloudSync('owner');
+    final pending = await controller.database.latestPendingSyncOperation('transaction_trash', 'legacy');
+    expect(pending!['operation'], 'upsert');
+    expect(await controller.database.latestPendingSyncOperation('transaction_trash', 'tracked'), isNull);
+    await controller.database.enqueueLegacyTransactionTrashForCloudSync('owner');
+    expect((await controller.database.latestPendingSyncOperation('transaction_trash', 'legacy'))!['id'], pending['id']);
+    await database.update('transaction_trash', {'deleted_on': now - const Duration(days: 31).inMilliseconds}, where: 'id = ?', whereArgs: ['legacy']);
+    await controller.database.expireTransactionTrash();
+    expect((await controller.database.latestPendingSyncOperation('transaction_trash', 'legacy'))!['operation'], 'delete');
+    expect((await controller.database.deletedTransactions()).single['id'], 'tracked');
+  });
+
+  test('a second device restores a synced recovery copy once and both devices converge', () async {
+    await controller.addTransaction(split());
+    await controller.moveTransactionToTrash('split');
+    final snapshot = await controller.database.exportAll();
+    final pending = await controller.database.pendingSyncOperations();
+    await controller.database.markOutboxUploaded(pending.map((row) => row['id'] as String).toList(),
+      {for (final row in pending) row['id'] as String: 1});
+    final firstPath = await sql.databaseFactory.getDatabasesPath();
+    final secondPath = Directory('${directory.path}/second')..createSync();
+    await sql.databaseFactory.setDatabasesPath(secondPath.path);
+    final second = YutakaDatabase();
+    try {
+      await second.replaceFinanceDataWithRemoteChanges([
+        for (final table in YutakaDatabase.syncTables)
+          for (final row in (snapshot[table] as List? ?? []))
+            {'entityType': table, 'entityId': row['id'], 'operation': 'upsert', 'version': 1, 'payload': row},
+      ]);
+      expect(await second.deletedTransactions(), hasLength(1));
+      await second.restoreDeletedTransaction('split');
+      await second.restoreDeletedTransaction('split');
+      final deviceDb = await second.db;
+      expect((await deviceDb.query('accounts', where: 'id = ?', whereArgs: ['cash'])).single['amount'], 890);
+      final operations = await second.pendingSyncOperations();
+      await controller.database.applyRemoteChanges([
+        for (final row in operations)
+          {'entityType': row['entity_type'], 'entityId': row['entity_id'], 'operation': row['operation'],
+            'version': 2, 'changedAt': DateTime.now().millisecondsSinceEpoch,
+            'payload': row['payload_json'] == null ? null : jsonDecode(row['payload_json'] as String)},
+      ], (_) async {});
+      await controller.reload();
+      expect(controller.transactions.single.id, 'split');
+      expect(controller.accountOf('cash')!.amount, 890);
+      expect(await controller.database.deletedTransactions(), isEmpty);
+    } finally {
+      await (await second.db).close();
+      await sql.databaseFactory.setDatabasesPath(firstPath);
+    }
+  });
+
+  test('backup merge preserves recovery copies and remaps their split categories', () async {
+    await controller.addTransaction(split());
+    await controller.moveTransactionToTrash('split');
+    final backup = await controller.database.exportAll();
+    expect(backup['transaction_trash'], hasLength(1));
+    await controller.database.mergeAll(backup);
+    expect(await controller.database.deletedTransactions(), hasLength(1));
+    final normalized = normalizeCategoryDatabasePayload({
+      'categories': [
+        {'id': 'old', 'name': 'Food', 'type': 'expense', 'created_on': 1},
+        {'id': 'new', 'name': ' food ', 'type': 'expense', 'created_on': 2},
+      ],
+      'transaction_trash': [
+        {'id': 'recover', 'deleted_on': DateTime.now().millisecondsSinceEpoch,
+          'payload_json': jsonEncode({'transaction': split(id: 'recover').copyWith(categoryId: 'new', categorySplits: {'new': 100}).toMap()})},
+      ],
+    });
+    final row = (normalized.database['transaction_trash'] as List).single as Map;
+    final tx = (jsonDecode(row['payload_json'] as String) as Map)['transaction'] as Map;
+    expect(tx['category_id'], 'old');
+    expect(jsonDecode(tx['category_splits'] as String), {'old': 100});
+    final category = controller.categories.first.toMap();
+    await database.insert('categories', {...category, 'id': 'old', 'name': 'Recovery category', 'type': 'expense', 'created_on': 1});
+    await database.insert('categories', {...category, 'id': 'new', 'name': ' recovery category ', 'type': 'expense', 'created_on': 2});
+    await database.insert('transaction_trash', {'id': 'db-recover', 'deleted_on': DateTime.now().millisecondsSinceEpoch,
+      'payload_json': jsonEncode({'transaction': split(id: 'db-recover').copyWith(categoryId: 'new', categorySplits: {'new': 100}).toMap()})});
+    final repaired = await controller.database.mergeDuplicateCategories();
+    expect(repaired.updatedTransactionTrashIds, contains('db-recover'));
+    await controller.restoreDeletedTransaction('db-recover');
+    expect(controller.transactions.single.categoryId, 'old');
+    expect(controller.transactions.single.categorySplits, {'old': 100});
+    expect(controller.accountOf('cash')!.amount, 890);
   });
 
   test('category merging preserves split totals and remaps saved shortcuts', () {
