@@ -75,7 +75,7 @@ void main() {
   });
 
   for (final scale in [1.0, 2.0]) {
-    testWidgets('transaction configuration headings align and AM/PM stays with the time at $scale text', (tester) async {
+    testWidgets('transaction configuration content stays centered and AM/PM stays with the time at $scale text', (tester) async {
       tester.view.physicalSize = const Size(320, 640);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -101,12 +101,16 @@ void main() {
       await tester.pump();
       final date = find.text('Time • Date');
       final charge = find.text('Service charge');
-      expect(tester.getTopLeft(date).dy, closeTo(tester.getTopLeft(charge).dy, .5));
       expect(find.text('Oct 15, 2026\n4:52\u00a0PM'), findsOneWidget);
       final dateButton = find.ancestor(of: date, matching: find.byType(OutlinedButton));
       final chargeButton = find.ancestor(of: charge, matching: find.byType(OutlinedButton));
       expect(tester.getSize(dateButton).width, closeTo(tester.getSize(chargeButton).width, .5));
       expect(tester.getSize(dateButton).height, closeTo(tester.getSize(chargeButton).height, .5));
+      for (final button in [dateButton, chargeButton]) {
+        final content = find.descendant(of: button, matching: find.byType(Column)).first;
+        expect(tester.getCenter(content).dy, closeTo(tester.getCenter(button).dy, .5));
+        expect(tester.getCenter(content).dx, closeTo(tester.getCenter(button).dx, .5));
+      }
       final statusGap = tester.getTopLeft(find.text('Off')).dy - tester.getBottomLeft(charge).dy;
       expect(statusGap, inInclusiveRange(0, 6 * scale));
       expect(tester.takeException(), isNull);
