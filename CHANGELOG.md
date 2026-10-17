@@ -1,3 +1,16 @@
+## 1.0.1332+376
+
+- Refine the decorative Net Balance wave with smooth anti-aliased cubic curves, rounded strokes, a teal/mint gradient and soft glow. Keep the existing card height and travelling-wave animation.
+- Make both wave layers meet seamlessly at the animation loop boundary. Repaint the vector directly from the animation controller without rebuilding a chart every frame, and retain the static reduced-motion state.
+- Replace source-string assertions with rendering checks for visible animation, loop continuity and reduced motion at narrow and desktop widths. Retain all existing features, blur, other animations and prior fixes.
+- Align app and Worker release metadata; Worker implementation and bundled source are unchanged.
+
+## 1.0.1331+375
+
+- Vertically center each configuration button's icon, label and value as one compact group. Apply the shared alignment to transaction Service charge, subscription Repeat, loan Interest and all other form configuration controls, while retaining equal paired button sizes.
+- Update the existing narrow/large-text geometry checks to verify centered groups rather than top-aligned headings. Preserve date/time wrapping, status spacing, interactions, animations and blur.
+- Retain all Recently deleted synchronization and lock fixes. Align Worker release-version metadata with the app as required by the deployment workflow; Worker implementation and bundle are unchanged.
+
 ## 1.0.1330+374
 
 - Only arm the background lock when entering the background, preserving native-auth completion across the full paused → hidden → inactive → resumed return sequence.
