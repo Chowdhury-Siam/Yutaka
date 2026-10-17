@@ -32,6 +32,12 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="1.0.1332" date="2026-10-17">
+      <description><p>Refine the animated balance wave with smooth vector rendering and seamless motion.</p></description>
+    </release>
+    <release version="1.0.1331" date="2026-10-17">
+      <description><p>Center form configuration labels and values.</p></description>
+    </release>
     <release version="1.0.1330" date="2026-10-16">
       <description><p>Synchronize Recently deleted recovery copies across devices and backups.</p></description>
     </release>
