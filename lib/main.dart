@@ -13167,12 +13167,11 @@ class _DecorativeSparkline extends StatefulWidget {
 
 class _DecorativeSparklineState extends State<_DecorativeSparkline> with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  static const _baseValues = <double>[1.2, 1.7, 1.4, 2.4, 2.1, 3.2, 2.9, 4.0];
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 2400));
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 3600));
   }
 
   @override
@@ -13193,70 +13192,93 @@ class _DecorativeSparklineState extends State<_DecorativeSparkline> with SingleT
     super.dispose();
   }
 
-  List<FlSpot> _spots(double animationValue) {
-    final phase = animationValue * math.pi * 2;
-    return List<FlSpot>.generate(_baseValues.length, (index) {
-      // Use two travelling waves so the line visibly breathes instead of only
-      // shifting by a few pixels. The movement stays small enough to preserve the
-      // original trend while being obvious on both phone and desktop screens.
-      final primaryWave = math.sin(phase + index * .78) * .30;
-      final secondaryWave = math.sin(phase * 1.55 - index * .44) * .10;
-      return FlSpot(index.toDouble(), _baseValues[index] + primaryWave + secondaryWave);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
     return RepaintBoundary(
       child: SizedBox(
         height: 48,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            final animationValue = reduceMotion ? 0.0 : _controller.value;
-            final pulse = reduceMotion
-                ? 0.0
-                : (math.sin(animationValue * math.pi * 2) + 1) / 2;
-            final glow = reduceMotion ? .025 : .025 + pulse * .015;
-            final lineOpacity = reduceMotion ? 1.0 : .78 + pulse * .22;
-            final lineWidth = reduceMotion ? 3.0 : 3.1 + pulse * .9;
-            return LineChart(
-              LineChartData(
-                minX: 0,
-                maxX: 7,
-                minY: 0,
-                maxY: 4.5,
-                gridData: const FlGridData(show: false),
-                borderData: FlBorderData(show: false),
-                titlesData: const FlTitlesData(show: false),
-                lineTouchData: const LineTouchData(enabled: false),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: _spots(animationValue),
-                    isCurved: true,
-                    preventCurveOverShooting: true,
-                    color: kSleekAccent.withOpacity(lineOpacity),
-                    barWidth: lineWidth,
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [kSleekAccent.withOpacity(glow), kSleekAccent.withOpacity(0)],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              duration: Duration.zero,
-            );
-          },
+        width: double.infinity,
+        child: CustomPaint(
+          key: const ValueKey('balance-wave'),
+          painter: _BalanceWavePainter(animation: _controller),
         ),
       ),
     );
   }
+}
+
+class _BalanceWavePainter extends CustomPainter {
+  _BalanceWavePainter({required this.animation}) : super(repaint: animation);
+
+  final Animation<double> animation;
+
+  double _height(double t, double phase) =>
+      .76 - t * .52 +
+      math.sin(t * math.pi * 4 - phase) * .10 +
+      math.sin(t * math.pi * 6 + phase * 2) * .035;
+
+  double _slope(double t, double phase) =>
+      -.52 +
+      math.cos(t * math.pi * 4 - phase) * math.pi * 4 * .10 +
+      math.cos(t * math.pi * 6 + phase * 2) * math.pi * 6 * .035;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    // Integer phase multiples make both travelling layers meet at the loop seam.
+    final phase = (animation.value % 1) * math.pi * 2;
+    final bounds = Offset.zero & size;
+    final line = Path()..moveTo(0, _height(0, phase) * size.height);
+    // Cubic tangents keep the curve smooth at every join, at any display scale.
+    const segments = 32;
+    const step = 1.0 / segments;
+    for (var index = 0; index < segments; index++) {
+      final from = index * step;
+      final to = (index + 1) * step;
+      final startY = _height(from, phase);
+      final endY = _height(to, phase);
+      line.cubicTo(
+        (from + step / 3) * size.width,
+        (startY + _slope(from, phase) * step / 3) * size.height,
+        (to - step / 3) * size.width,
+        (endY - _slope(to, phase) * step / 3) * size.height,
+        to * size.width,
+        endY * size.height,
+      );
+    }
+    final fill = Path.from(line)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(fill, Paint()
+      ..isAntiAlias = true
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [kSleekAccent.withOpacity(.10), kSleekAccent.withOpacity(0)],
+      ).createShader(bounds));
+    canvas.drawPath(line, Paint()
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = kSleekAccent.withOpacity(.14)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
+    canvas.drawPath(line, Paint()
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..shader = const LinearGradient(
+        colors: [kSleekAccent, Color(0xFF93DFBC), kSleekAccent],
+      ).createShader(bounds));
+  }
+
+  @override
+  bool shouldRepaint(covariant _BalanceWavePainter oldDelegate) =>
+      oldDelegate.animation != animation;
 }
 
 class YutakaInlineLoader extends StatelessWidget {
@@ -18781,7 +18803,7 @@ class _ConfigurationButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => OutlinedButton(
     style: OutlinedButton.styleFrom(
-      alignment: Alignment.topCenter,
+      alignment: Alignment.center,
       minimumSize: const Size(48, 48),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
     ),
