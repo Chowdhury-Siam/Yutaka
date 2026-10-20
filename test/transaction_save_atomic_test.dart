@@ -102,6 +102,33 @@ void main() {
     expect(controller.accountOf('cash')!.amount, -50);
   });
 
+  test('foreground subscription polling does not stall a local transaction', () async {
+    final now = DateTime.now();
+    await database.insert('subscriptions', RecurringSubscription(
+      id: 'due-subscription', name: 'Mobile plan', amount: 10,
+      categoryId: controller.defaultExpenseCategoryId!, accountId: 'cash',
+      nextDueOn: now.subtract(const Duration(days: 1)),
+      frequency: SubscriptionFrequency.monthly, createdOn: now, updatedOn: now,
+    ).toMap());
+    final transactionStarted = Completer<void>();
+    final releaseTransaction = Completer<void>();
+    final write = database.transaction((txn) async {
+      await txn.rawUpdate('UPDATE accounts SET amount = amount WHERE id = ?', ['cash']);
+      transactionStarted.complete();
+      await releaseTransaction.future;
+      await txn.query('accounts');
+    }, exclusive: true);
+    await transactionStarted.future;
+    final watch = Stopwatch()..start();
+    final sweep = controller.processDueSubscriptions();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    releaseTransaction.complete();
+    await Future.wait([write, sweep]).timeout(const Duration(seconds: 3));
+    expect(await sweep, 1);
+    expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
+    expect((await controller.database.accounts()).firstWhere((row) => row.id == 'cash').amount, 70);
+  });
+
   test('outbox failure rolls back both the transaction and account balance', () async {
     await database.execute('''
       CREATE TRIGGER fail_save_outbox BEFORE INSERT ON sync_outbox
@@ -116,6 +143,23 @@ void main() {
     await controller.addTransaction(tx);
     expect(controller.transactions, hasLength(1));
     expect(controller.accountOf('cash')!.amount, 15);
+  });
+
+  test('manual subscription entry keeps the app connection usable offline', () async {
+    final now = DateTime.now();
+    final subscription = RecurringSubscription(
+      id: 'manual-subscription', name: 'Mobile plan', amount: 10,
+      categoryId: controller.defaultExpenseCategoryId!, accountId: 'cash',
+      nextDueOn: now, frequency: SubscriptionFrequency.monthly,
+      createdOn: now, updatedOn: now,
+    );
+    await database.insert('subscriptions', subscription.toMap());
+    await controller.recordSubscriptionNow(subscription).timeout(const Duration(seconds: 3));
+    expect(database.isOpen, isTrue);
+    expect(controller.accountOf('cash')!.amount, 70);
+    await controller.addTransaction(draft()).timeout(const Duration(seconds: 3));
+    expect(controller.transactions, hasLength(2));
+    expect(controller.accountOf('cash')!.amount, 5);
   });
 
   Finder field(String label) => find.byWidgetPredicate(
