@@ -21,10 +21,11 @@ void main() {
     expect(app, contains('startActionPane: tx.isLoanTransaction'));
     expect(app, contains("label: 'Duplicate'"));
     expect(app, contains('extentRatio: .28'));
-    // A start pane that is only .28 wide cannot ever snap open if its
-    // openThreshold is greater than .28. Keep Duplicate deliberately sticky.
-    expect(app, contains('openThreshold: .14'));
-    expect(app, contains('closeThreshold: .08'));
+    final transactionTile = app.substring(app.indexOf('class TransactionTile '), app.indexOf('String transactionDateSpanLabel'));
+    expect(transactionTile, contains('dragStartBehavior: DragStartBehavior.down'));
+    expect(transactionTile, contains('openThreshold: .10'));
+    expect(transactionTile, contains('closeThreshold: .10'));
+    expect(app, contains('closeWhenTapped: false'));
     expect(loans, isNot(contains('startActionPane:')));
     expect(app, isNot(contains('BehindMotion()')));
     expect(loans, isNot(contains('BehindMotion()')));
