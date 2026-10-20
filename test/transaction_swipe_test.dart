@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:yutaka/main.dart';
@@ -18,6 +17,7 @@ void main() {
   Future<SwipeTestController> mount(
     WidgetTester tester, {
     String idPrefix = '',
+    bool linkedLoan = false,
   }) async {
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
@@ -36,6 +36,8 @@ void main() {
         notes: '',
         categoryId: 'food',
         fromAccountId: 'cash',
+        linkedEntityType: linkedLoan && i == 3 ? 'loans' : null,
+        linkedEntityId: linkedLoan && i == 3 ? 'loan' : null,
         createdOn: now,
         updatedOn: now,
       ),
@@ -79,16 +81,21 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  double swipeRatio(WidgetTester tester, int row) {
+    final finder = find.byType(TransactionTile).at(row);
+    final tx = tester.widget<TransactionTile>(finder).tx;
+    final content = find.byKey(ValueKey('transaction-content-${tx.id}'));
+    return (tester.getTopLeft(content).dx - tester.getTopLeft(finder).dx) /
+        tester.getSize(finder).width;
+  }
+
   testWidgets('short deliberate swipes open both action panes', (tester) async {
     await mount(tester);
     await slowSwipe(tester, 0, -45);
-    final controller = Slidable.of(tester.element(find.text('Edit')))!;
-    expect(controller.ratio, closeTo(-.48, .001));
+    expect(swipeRatio(tester, 0), closeTo(-.48, .001));
     expect(find.text('Edit').hitTestable(), findsOneWidget);
     expect(find.text('Delete').hitTestable(), findsOneWidget);
-    controller.close();
-    await tester.pumpAndSettle();
-    await slowSwipe(tester, 0, 45);
+    await slowSwipe(tester, 0, 250);
     expect(find.text('Duplicate').hitTestable(), findsOneWidget);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
@@ -115,12 +122,11 @@ void main() {
           findsOneWidget,
           reason: 'initial pane on attempt $attempt',
         );
-        final controller = Slidable.of(
-          tester.element(find.text(initialSwipe > 0 ? 'Duplicate' : 'Edit')),
-        )!;
-        controller.close();
+        await tester.drag(
+          find.byType(TransactionTile).at(1),
+          const Offset(100, 0),
+        );
         await tester.pump(const Duration(milliseconds: 16));
-        expect(controller.closing, isTrue);
         final gesture = await tester.startGesture(
           tester.getCenter(find.byType(TransactionTile).at(2)),
         );
@@ -131,15 +137,19 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 16));
         await gesture.moveBy(
-          const Offset(45, 0),
+          const Offset(145, 0),
           timeStamp: const Duration(milliseconds: 60),
         );
         await tester.pump(const Duration(milliseconds: 16));
         await gesture.up(timeStamp: const Duration(milliseconds: 70));
         await tester.pumpAndSettle();
-        expect(find.text('Duplicate').hitTestable(), findsOneWidget);
-        expect(controller.ratio, closeTo(.28, .001));
-        await tester.tap(find.text('Duplicate'));
+        final duplicate = find.descendant(
+          of: find.byType(TransactionTile).at(2),
+          matching: find.text('Duplicate'),
+        );
+        expect(duplicate.hitTestable(), findsOneWidget);
+        expect(swipeRatio(tester, 2), closeTo(.28, .001));
+        await tester.tap(duplicate);
         await tester.pumpAndSettle();
         expect(state.duplicates, attempt + 1);
       }
@@ -157,6 +167,49 @@ void main() {
     expect(find.text('Duplicate'), findsNothing);
     await slowSwipe(tester, 0, 100);
     expect(find.text('Duplicate').hitTestable(), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('right swipes keep working across every visible row', (
+    tester,
+  ) async {
+    await mount(tester);
+    for (final row in [0, 1, 2, 3, 4, 5, 2, 3, 4, 5, 1, 0]) {
+      await slowSwipe(tester, row, 140);
+      final pane = find.descendant(
+        of: find.byType(TransactionTile).at(row),
+        matching: find.text('Duplicate'),
+      );
+      expect(pane.hitTestable(), findsOneWidget, reason: 'row $row');
+      expect(
+        List.generate(
+          6,
+          (index) => swipeRatio(tester, index),
+        ).where((ratio) => ratio.abs() > .01),
+        hasLength(1),
+      );
+    }
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('loan-linked rows explain why Duplicate is unavailable', (
+    tester,
+  ) async {
+    final state = await mount(tester, linkedLoan: true);
+    await slowSwipe(tester, 3, 140);
+    await tester.tap(find.text('Duplicate'));
+    await tester.pumpAndSettle();
+    expect(state.duplicates, 0);
+    expect(
+      find.text('Loan-linked transactions cannot be duplicated.'),
+      findsOneWidget,
+    );
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('scrolling closes open transaction actions', (tester) async {
+    await mount(tester);
+    await slowSwipe(tester, 2, 140);
+    await tester.drag(find.byType(ListView), const Offset(0, -140));
+    await tester.pumpAndSettle();
+    expect(find.text('Duplicate'), findsNothing);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
   testWidgets('actions respond after switching rows and scrolling', (
