@@ -18214,9 +18214,29 @@ Future<bool> _confirmDeleteTransaction(BuildContext context, MoneyTransaction tx
   }
 }
 
-class TransactionTile extends StatelessWidget {
+class TransactionTile extends StatefulWidget {
   const TransactionTile({super.key, required this.tx});
   final MoneyTransaction tx;
+
+  @override
+  State<TransactionTile> createState() => _TransactionTileState();
+}
+
+class _TransactionTileState extends State<TransactionTile> with SingleTickerProviderStateMixin {
+  late final _slideController = SlidableController(this);
+  MoneyTransaction get tx => widget.tx;
+
+  @override
+  void didUpdateWidget(covariant TransactionTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tx.id != tx.id) _slideController.close(duration: Duration.zero);
+  }
+
+  @override
+  void dispose() {
+    _slideController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18318,6 +18338,7 @@ class TransactionTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Slidable(
         key: ValueKey('transaction-${tx.id}'),
+        controller: _slideController,
         groupTag: 'transactions',
         dragStartBehavior: DragStartBehavior.down,
         closeOnScroll: true,
@@ -18362,7 +18383,13 @@ class TransactionTile extends StatelessWidget {
             ),
           ],
         ),
-        child: tile,
+        child: Listener(
+          onPointerDown: (_) {
+            // Slidable ignores drags until close completes; finish it before a new gesture.
+            if (_slideController.closing) _slideController.close(duration: Duration.zero);
+          },
+          child: tile,
+        ),
       ),
     );
   }
