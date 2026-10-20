@@ -15,7 +15,10 @@ class SwipeTestController extends AppController {
 }
 
 void main() {
-  Future<SwipeTestController> mount(WidgetTester tester) async {
+  Future<SwipeTestController> mount(
+    WidgetTester tester, {
+    String idPrefix = '',
+  }) async {
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -26,7 +29,7 @@ void main() {
     final rows = List.generate(
       12,
       (i) => MoneyTransaction(
-        id: '$i',
+        id: '$idPrefix$i',
         title: 'Purchase $i',
         type: MoneyTransactionType.expense,
         amount: 10,
@@ -97,6 +100,63 @@ void main() {
     await tester.tap(find.text('Purchase 1'));
     await tester.pumpAndSettle();
     expect(find.byType(TransactionEditor), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  for (final initialSwipe in [100.0, -200.0]) {
+    testWidgets('right swipe reopens while closing from $initialSwipe', (
+      tester,
+    ) async {
+      final state = await mount(tester);
+      for (var attempt = 0; attempt < 3; attempt++) {
+        // Keep the gesture below the Duplicate confirmation banner.
+        await slowSwipe(tester, 2, initialSwipe);
+        expect(
+          find.text(initialSwipe > 0 ? 'Duplicate' : 'Edit').hitTestable(),
+          findsOneWidget,
+          reason: 'initial pane on attempt $attempt',
+        );
+        final controller = Slidable.of(
+          tester.element(find.text(initialSwipe > 0 ? 'Duplicate' : 'Edit')),
+        )!;
+        controller.close();
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(controller.closing, isTrue);
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.byType(TransactionTile).at(2)),
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+        await gesture.moveBy(
+          const Offset(35, 0),
+          timeStamp: const Duration(milliseconds: 30),
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+        await gesture.moveBy(
+          const Offset(45, 0),
+          timeStamp: const Duration(milliseconds: 60),
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+        await gesture.up(timeStamp: const Duration(milliseconds: 70));
+        await tester.pumpAndSettle();
+        expect(find.text('Duplicate').hitTestable(), findsOneWidget);
+        expect(controller.ratio, closeTo(.28, .001));
+        await tester.tap(find.text('Duplicate'));
+        await tester.pumpAndSettle();
+        expect(state.duplicates, attempt + 1);
+      }
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+  }
+
+  testWidgets('a reused row closes actions from the previous transaction', (
+    tester,
+  ) async {
+    await mount(tester);
+    await slowSwipe(tester, 0, 100);
+    final rowState = tester.state(find.byType(TransactionTile).first);
+    await mount(tester, idPrefix: 'replacement-');
+    expect(tester.state(find.byType(TransactionTile).first), same(rowState));
+    expect(find.text('Duplicate'), findsNothing);
+    await slowSwipe(tester, 0, 100);
+    expect(find.text('Duplicate').hitTestable(), findsOneWidget);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
   testWidgets('actions respond after switching rows and scrolling', (
