@@ -19,6 +19,7 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:lottie/lottie.dart';
 import 'package:timelines_plus/timelines_plus.dart';
 import 'package:flutter/foundation.dart' hide Category, Summary;
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -2534,7 +2535,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> initialize() async {
     await database.db;
-    await SubscriptionBackgroundService.processDueNow();
+    await SubscriptionBackgroundService.processDueNow(connection: await database.db);
     await _loadPreferences();
     tabIndex = _tabIndexForStartupPage(startupPage);
     await reload();
@@ -7685,6 +7686,7 @@ class AppController extends ChangeNotifier {
       item.id,
       occurredOn: occurredOn,
       accountId: accountId,
+      connection: await database.db,
     );
     await reload(queueSync: true);
   }
@@ -7693,7 +7695,7 @@ class AppController extends ChangeNotifier {
     if (_subscriptionSweepInFlight) return 0;
     _subscriptionSweepInFlight = true;
     try {
-      final created = await SubscriptionBackgroundService.processDueNow();
+      final created = await SubscriptionBackgroundService.processDueNow(connection: await database.db);
       if (created > 0) {
         await reload(queueSync: true);
       }
@@ -9577,7 +9579,8 @@ class ResponsiveListContent extends StatelessWidget {
             width: width,
             child: SlidableAutoCloseBehavior(
               closeWhenOpened: true,
-              closeWhenTapped: true,
+              // Let the first tap reach the row instead of consuming it to close a pane.
+              closeWhenTapped: false,
               child: Column(
                 children: [
                   if (fixedHeader.isNotEmpty)
@@ -18316,6 +18319,7 @@ class TransactionTile extends StatelessWidget {
       child: Slidable(
         key: ValueKey('transaction-${tx.id}'),
         groupTag: 'transactions',
+        dragStartBehavior: DragStartBehavior.down,
         closeOnScroll: true,
         startActionPane: tx.isLoanTransaction
             ? null
@@ -18323,12 +18327,8 @@ class TransactionTile extends StatelessWidget {
                 motion: const ScrollMotion(),
                 extentRatio: .28,
                 dragDismissible: false,
-                // The start pane is only 28% wide. Its snap-open threshold must
-                // stay below that maximum extent; the old .34 threshold could
-                // never be reached, so a left-to-right Duplicate swipe always
-                // snapped closed as soon as the finger was released.
-                openThreshold: .14,
-                closeThreshold: .08,
+                openThreshold: .10,
+                closeThreshold: .10,
                 children: [
                   _YutakaSlidableAction(
                     onPressed: (_) => _duplicateTransaction(context, tx),
@@ -18343,8 +18343,8 @@ class TransactionTile extends StatelessWidget {
           motion: const ScrollMotion(),
           extentRatio: .48,
           dragDismissible: false,
-          openThreshold: .34,
-          closeThreshold: .16,
+          openThreshold: .10,
+          closeThreshold: .10,
           children: [
             _YutakaSlidableAction(
               onPressed: (_) => showTransactionEditor(context, transaction: tx),
