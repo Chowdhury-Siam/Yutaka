@@ -314,6 +314,56 @@ void main() {
     expect((await controller.database.syncEntityRow('accounts', 'cash-account'))!['amount'], 100);
   });
 
+  test('transaction saves locally while a cloud request stalls and then loses connection', () async {
+    final controller = AppController();
+    addTearDown(controller.dispose);
+    await controller.database.upsertSyncEntityRow('accounts', account(100, 100));
+    final pullStarted = Completer<void>();
+    final releasePull = Completer<void>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    Future<void>? activeSync;
+    addTearDown(() async {
+      controller.cloudSyncEnabled = false;
+      if (!releasePull.isCompleted) releasePull.complete();
+      await server.close(force: true);
+      if (activeSync != null) await activeSync;
+    });
+    server.listen((request) async {
+      await request.drain<void>();
+      if (request.uri.path == '/v1/sync/pull') {
+        if (!pullStarted.isCompleted) pullStarted.complete();
+        await releasePull.future;
+      }
+      final socket = await request.response.detachSocket(writeHeaders: false);
+      socket.destroy();
+    });
+    controller.cloudSyncApiBaseUrl = 'http://127.0.0.1:${server.port}';
+    controller.cloudSyncEnabled = true;
+    controller.syncAccessToken = 'access';
+    controller.syncRefreshToken = 'refresh';
+    controller.syncDeviceId = 'offline-device';
+    activeSync = controller.performMultiDeviceSync(silent: true, pushLocalChanges: false);
+    await pullStarted.future.timeout(const Duration(seconds: 2));
+    final now = DateTime.now();
+    await controller.addTransaction(MoneyTransaction(
+      id: 'offline-mobile-recharge', title: 'Mobile Recharge',
+      type: MoneyTransactionType.expense, amount: 30, notes: '',
+      categoryId: 'utilities', fromAccountId: 'cash-account',
+      createdOn: now, updatedOn: now,
+    )).timeout(const Duration(seconds: 2));
+    expect(releasePull.isCompleted, isFalse);
+    expect(controller.transactions.single.title, 'Mobile Recharge');
+    expect(controller.accountOf('cash-account')!.amount, 70);
+    final pending = await controller.database.pendingSyncOperations();
+    expect(pending.where((row) => row['entity_type'] == 'transactions'), hasLength(1));
+    controller.cloudSyncEnabled = false;
+    releasePull.complete();
+    await activeSync;
+    expect(controller.cloudSyncError, isNotNull);
+    expect((await controller.database.transactions()).single.id, 'offline-mobile-recharge');
+    expect(await controller.database.pendingSyncOperations(), hasLength(pending.length));
+  });
+
   test('malformed success responses cannot clear pending operations or stall pagination', () async {
     var response = <String, dynamic>{};
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
