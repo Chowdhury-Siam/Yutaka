@@ -18223,17 +18223,76 @@ class TransactionTile extends StatefulWidget {
 }
 
 class _TransactionTileState extends State<TransactionTile> with SingleTickerProviderStateMixin {
-  late final _slideController = SlidableController(this);
+  static _TransactionTileState? _openTile;
+  late final _slideController = AnimationController.unbounded(vsync: this);
+  ScrollPosition? _scrollPosition;
+  bool _disableSwipeAnimations = false;
   MoneyTransaction get tx => widget.tx;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _disableSwipeAnimations = MediaQuery.disableAnimationsOf(context);
+    _scrollPosition?.isScrollingNotifier.removeListener(_closeOnScroll);
+    _scrollPosition = Scrollable.maybeOf(context)?.position;
+    _scrollPosition?.isScrollingNotifier.addListener(_closeOnScroll);
+  }
+
+  void _closeOnScroll() {
+    if (_scrollPosition?.isScrollingNotifier.value == true) _animateSwipe(0);
+  }
+
+  void _animateSwipe(double target) {
+    if (target == 0 && _openTile == this) _openTile = null;
+    if (_slideController.value == target && !_slideController.isAnimating) return;
+    if (_disableSwipeAnimations) {
+      _slideController.value = target;
+    } else {
+      _slideController.animateTo(target, duration: const Duration(milliseconds: 180), curve: Curves.easeOutCubic);
+    }
+  }
+
+  void _startSwipe(DragStartDetails details) {
+    if (_openTile != this) _openTile?._animateSwipe(0);
+    _openTile = this;
+    _slideController.stop();
+  }
+
+  void _settleSwipe(double velocity) {
+    final value = _slideController.value;
+    final opens = velocity.abs() >= 250 ? velocity.sign == value.sign : value.abs() >= .10;
+    _animateSwipe(opens ? (value > 0 ? .28 : -.48) : 0);
+  }
+
+  Widget _swipeAction({required String label, required IconData icon, required Color background,
+    required Color foreground, required VoidCallback onPressed}) => Expanded(
+    child: SizedBox.expand(child: FilledButton(
+      onPressed: () { _animateSwipe(0); onPressed(); },
+      style: FilledButton.styleFrom(
+        backgroundColor: background, foregroundColor: foreground,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon), const SizedBox(height: 4), Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ]),
+    )),
+  );
 
   @override
   void didUpdateWidget(covariant TransactionTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.tx.id != tx.id) _slideController.close(duration: Duration.zero);
+    if (oldWidget.tx.id != tx.id) {
+      if (_openTile == this) _openTile = null;
+      _slideController.value = 0;
+    }
   }
 
   @override
   void dispose() {
+    if (_openTile == this) _openTile = null;
+    _scrollPosition?.isScrollingNotifier.removeListener(_closeOnScroll);
     _slideController.dispose();
     super.dispose();
   }
@@ -18333,65 +18392,49 @@ class _TransactionTileState extends State<TransactionTile> with SingleTickerProv
       ),
     );
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      clipBehavior: Clip.antiAlias,
-      child: Slidable(
+    return LayoutBuilder(builder: (context, constraints) {
+      return GestureDetector(
         key: ValueKey('transaction-${tx.id}'),
-        controller: _slideController,
-        groupTag: 'transactions',
+        behavior: HitTestBehavior.opaque,
         dragStartBehavior: DragStartBehavior.down,
-        closeOnScroll: true,
-        startActionPane: tx.isLoanTransaction
-            ? null
-            : ActionPane(
-                motion: const ScrollMotion(),
-                extentRatio: .28,
-                dragDismissible: false,
-                openThreshold: .10,
-                closeThreshold: .10,
-                children: [
-                  _YutakaSlidableAction(
-                    onPressed: (_) => _duplicateTransaction(context, tx),
-                    backgroundColor: kSleekAccent,
-                    foregroundColor: Colors.white,
-                    icon: Icons.content_copy_rounded,
-                    label: 'Duplicate',
+        onHorizontalDragStart: _startSwipe,
+        onHorizontalDragUpdate: (details) {
+          _slideController.value = (_slideController.value + details.primaryDelta! / constraints.maxWidth).clamp(-.48, .28);
+        },
+        onHorizontalDragEnd: (details) => _settleSwipe(details.primaryVelocity ?? 0),
+        onHorizontalDragCancel: () => _settleSwipe(0),
+        child: AnimatedBuilder(
+          animation: _slideController,
+          child: KeyedSubtree(key: ValueKey('transaction-content-${tx.id}'), child: tile),
+          builder: (context, child) => ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Stack(children: [
+              if (_slideController.value != 0)
+                Positioned.fill(child: Align(
+                  alignment: _slideController.value > 0 ? Alignment.centerLeft : Alignment.centerRight,
+                  child: FractionallySizedBox(
+                    widthFactor: _slideController.value > 0 ? .28 : .48,
+                    child: Row(children: _slideController.value > 0 ? [
+                      _swipeAction(label: 'Duplicate', icon: Icons.content_copy_rounded,
+                        background: kSleekAccent, foreground: Colors.white,
+                        onPressed: () => _duplicateTransaction(context, tx)),
+                    ] : [
+                      _swipeAction(label: 'Edit', icon: Icons.edit_rounded,
+                        background: Theme.of(context).colorScheme.primaryContainer,
+                        foreground: Theme.of(context).colorScheme.onPrimaryContainer,
+                        onPressed: () => showTransactionEditor(context, transaction: tx)),
+                      _swipeAction(label: 'Delete', icon: Icons.delete_outline_rounded,
+                        background: kSleekExpense, foreground: Colors.white,
+                        onPressed: () => _confirmDeleteTransaction(context, tx)),
+                    ]),
                   ),
-                ],
-              ),
-        endActionPane: ActionPane(
-          motion: const ScrollMotion(),
-          extentRatio: .48,
-          dragDismissible: false,
-          openThreshold: .10,
-          closeThreshold: .10,
-          children: [
-            _YutakaSlidableAction(
-              onPressed: (_) => showTransactionEditor(context, transaction: tx),
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
-              icon: Icons.edit_rounded,
-              label: 'Edit',
-            ),
-            _YutakaSlidableAction(
-              onPressed: (_) => _confirmDeleteTransaction(context, tx),
-              backgroundColor: kSleekExpense,
-              foregroundColor: Colors.white,
-              icon: Icons.delete_outline_rounded,
-              label: 'Delete',
-            ),
-          ],
+                )),
+              Transform.translate(offset: Offset(_slideController.value * constraints.maxWidth, 0), child: child),
+            ]),
+          ),
         ),
-        child: Listener(
-          onPointerDown: (_) {
-            // Slidable ignores drags until close completes; finish it before a new gesture.
-            if (_slideController.closing) _slideController.close(duration: Duration.zero);
-          },
-          child: tile,
-        ),
-      ),
-    );
+      );
+    });
   }
 }
 
