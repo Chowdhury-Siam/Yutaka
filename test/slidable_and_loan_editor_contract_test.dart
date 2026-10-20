@@ -8,6 +8,7 @@ void main() {
     final loans = File('lib/loans/loan_screens.dart').readAsStringSync();
 
     expect(app, contains('SlidableAutoCloseBehavior('));
+    expect(app, contains("groupTag: 'transactions'"));
     expect(app, contains("groupTag: 'planned-purchases'"));
     expect(loans, contains("groupTag: 'loans'"));
     expect(app, contains('class _YutakaSlidableAction extends StatelessWidget'));
@@ -17,9 +18,13 @@ void main() {
     expect(app, contains('clipBehavior: Clip.antiAlias'));
     expect(loans, contains('motion: const ScrollMotion()'));
     expect(loans, contains('dragDismissible: false'));
+    expect(app, contains('startActionPane: tx.isLoanTransaction'));
     expect(app, contains("label: 'Duplicate'"));
+    expect(app, contains('extentRatio: .28'));
     final transactionTile = app.substring(app.indexOf('class TransactionTile '), app.indexOf('String transactionDateSpanLabel'));
     expect(transactionTile, contains('dragStartBehavior: DragStartBehavior.down'));
+    expect(transactionTile, contains('openThreshold: .10'));
+    expect(transactionTile, contains('closeThreshold: .10'));
     expect(app, contains('closeWhenTapped: false'));
     expect(loans, isNot(contains('startActionPane:')));
     expect(app, isNot(contains('BehindMotion()')));
