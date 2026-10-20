@@ -24,11 +24,12 @@ class SubscriptionBackgroundService {
     return sql.openDatabase(p.join(dir, 'yutaka_flutter.db'), singleInstance: false);
   }
 
-  static Future<int> processDueNow({DateTime? now}) async {
+  // Foreground work shares the app connection so SQLite serializes it with saves.
+  static Future<int> processDueNow({DateTime? now, sql.Database? connection}) async {
     final effectiveNow = now ?? DateTime.now();
     sql.Database? database;
     try {
-      database = await _openDatabase();
+      database = connection ?? await _openDatabase();
       final tableCheck = await database.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='subscriptions'",
       );
@@ -53,7 +54,7 @@ class SubscriptionBackgroundService {
       // another sweep, so a transient database error cannot lose a charge.
       return 0;
     } finally {
-      if (database != null) await database.close();
+      if (connection == null && database != null) await database.close();
     }
   }
 
@@ -178,9 +179,10 @@ class SubscriptionBackgroundService {
     String subscriptionId, {
     DateTime? occurredOn,
     String? accountId,
+    sql.Database? connection,
   }) async {
     final effectiveOn = occurredOn ?? DateTime.now();
-    final database = await _openDatabase();
+    final database = connection ?? await _openDatabase();
     try {
       final rows = await database.query(
         'subscriptions',
@@ -253,7 +255,7 @@ class SubscriptionBackgroundService {
       });
       return transactionId;
     } finally {
-      await database.close();
+      if (connection == null) await database.close();
     }
   }
 
